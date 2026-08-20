@@ -63,6 +63,23 @@ try:
 except Exception:
     pass
 
+# Ensure seed data / admin account exists on initial clean deployment
+try:
+    with SessionLocal() as _db_init:
+        if _db_init.query(models.User).count() == 0:
+            try:
+                from .seed import seed_db
+                seed_db()
+            except Exception:
+                try:
+                    from backend.seed import seed_db
+                    seed_db()
+                except Exception:
+                    pass
+except Exception:
+    pass
+
+
 for col_stmt in [
     "ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 1;",
     "ALTER TABLE users ADD COLUMN two_factor_secret TEXT;",

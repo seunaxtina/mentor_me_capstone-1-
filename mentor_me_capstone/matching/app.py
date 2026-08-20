@@ -1,12 +1,55 @@
+import sys
+import os
 import streamlit as st
 import requests
 import pandas as pd
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Robust sys.path configuration for cloud environments (Streamlit Cloud, Hugging Face, etc.)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
+
+def ensure_backend_running():
+    """
+    If running in a single-service cloud environment (e.g. Streamlit Community Cloud or Hugging Face),
+    automatically boots the FastAPI ASGI backend daemon in the background if not already active.
+    """
+    if "127.0.0.1" in API_URL or "localhost" in API_URL:
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex(('127.0.0.1', 8000))
+            sock.close()
+            if result != 0:
+                import threading
+                import uvicorn
+                try:
+                    from backend.main import app as fastapi_app
+                except ImportError:
+                    from matching.backend.main import app as fastapi_app
+                    
+                def _run_fastapi():
+                    config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=8000, log_level="warning")
+                    server = uvicorn.Server(config)
+                    server.run()
+                    
+                th = threading.Thread(target=_run_fastapi, daemon=True)
+                th.start()
+                import time
+                time.sleep(2.0)
+        except Exception:
+            pass
+
+ensure_backend_running()
 
 def get_app_base_url() -> str:
     """

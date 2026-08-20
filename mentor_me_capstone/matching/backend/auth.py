@@ -1,0 +1,194 @@
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+import jwt
+from jwt.exceptions import PyJWTError
+from sqlalchemy.orm import Session
+import os
+
+from .database import get_db
+from . import models
+
+import bcrypt
+
+# Environment config secret or default secure key
+SECRET_KEY = os.getenv("SECRET_KEY", "b3b2c6a0c5c4d36e2f1e4b9d0c6d5b0a720f4cbe60b64d2d4d8c7c91a0c8b2a1")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
+
+def get_password_hash(password: str) -> str:
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    import time
+    to_encode = data.copy()
+    seconds = expires_delta.total_seconds() if expires_delta else ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    expire_epoch = int(time.time() + seconds)
+    to_encode.update({"exp": expire_epoch})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            print("JWT VALIDATION FAIL: sub is None")
+            raise credentials_exception
+    except PyJWTError as e:
+        print(f"JWT VALIDATION FAIL (PyJWTError): {e}")
+        raise credentials_exception
+        
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        print(f"JWT VALIDATION FAIL: User with ID {user_id} not found in database")
+        raise credentials_exception
+    return user
+
+def require_role(allowed_roles: list[str]):
+    def role_dependency(current_user: models.User = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to access this resource"
+            )
+        return current_user
+    return role_dependency
+
+def generate_otp_code(length: int = 6) -> str:
+    import secrets
+    return "".join(secrets.choice("0123456789") for _ in range(length))
+
+def create_2fa_challenge_token(user_id: str, otp_code: str, email: str, role: str, expires_minutes: int = 5) -> str:
+    import time
+    import hashlib
+    otp_hash = hashlib.sha256(f"{otp_code}:{SECRET_KEY}".encode('utf-8')).hexdigest()
+    payload = {
+        "purpose": "2fa_challenge",
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "otp_hash": otp_hash,
+        "exp": int(time.time() + (expires_minutes * 60))
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_2fa_challenge_token(challenge_token: str, submitted_code: str) -> dict:
+    import hashlib
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Security challenge code is invalid or has expired. Please sign in again.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(challenge_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "2fa_challenge":
+            raise credentials_exception
+            
+        expected_hash = payload.get("otp_hash")
+        calc_hash = hashlib.sha256(f"{submitted_code.strip()}:{SECRET_KEY}".encode('utf-8')).hexdigest()
+        
+        if expected_hash != calc_hash:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect 6-digit security code. Please check and try again."
+            )
+        return payload
+    except PyJWTError:
+        raise credentials_exception
+
+
+def create_password_reset_challenge_token(user_id: str, otp_code: str, email: str, expires_minutes: int = 15) -> str:
+    import time
+    import hashlib
+    otp_hash = hashlib.sha256(f"{otp_code}:{SECRET_KEY}".encode('utf-8')).hexdigest()
+    payload = {
+        "purpose": "password_reset",
+        "sub": user_id,
+        "email": email,
+        "otp_hash": otp_hash,
+        "exp": int(time.time() + (expires_minutes * 60))
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_password_reset_challenge_token(challenge_token: str, submitted_code: str) -> dict:
+    import hashlib
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Password reset session is invalid or has expired. Please request a new code.",
+    )
+    try:
+        payload = jwt.decode(challenge_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            raise credentials_exception
+            
+        expected_hash = payload.get("otp_hash")
+        calc_hash = hashlib.sha256(f"{submitted_code.strip()}:{SECRET_KEY}".encode('utf-8')).hexdigest()
+        
+        if expected_hash != calc_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect 6-digit password reset code. Please check and try again."
+            )
+        return payload
+    except PyJWTError:
+        raise credentials_exception
+
+
+def send_email_notification(to_email: str, subject: str, body_text: str, body_html: str = None, reply_to: str = None) -> bool:
+    """
+    Sends an email via SMTP if credentials exist in .env, otherwise logs for preview.
+    """
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_user or "support@mentorme.app")
+
+    if smtp_host and smtp_user and smtp_password:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = smtp_from
+            msg["To"] = to_email
+            if reply_to:
+                msg["Reply-To"] = reply_to
+
+            part1 = MIMEText(body_text, "plain")
+            msg.attach(part1)
+            if body_html:
+                part2 = MIMEText(body_html, "html")
+                msg.attach(part2)
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_from, to_email, msg.as_string())
+            return True
+        except Exception as e:
+            print(f"SMTP Dispatch Notice: {e}")
+            return False
+    return False
+
+

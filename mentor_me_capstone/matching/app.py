@@ -1,0 +1,4145 @@
+import streamlit as st
+import requests
+import pandas as pd
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
+
+def get_app_base_url() -> str:
+    """
+    Returns the resolved application base URL for external invite links and OAuth redirects.
+    Precedence:
+    1. APP_BASE_URL or FRONTEND_URL environment variable in .env
+    2. Dynamic Streamlit Host auto-detection from request headers (st.context.headers)
+    3. Default: http://localhost:8501 (local development)
+    """
+    env_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or os.getenv("STREAMLIT_SERVER_BASE_URL")
+    if env_base and env_base.strip():
+        return env_base.strip().rstrip("/")
+        
+    # Auto-detect public URL from request headers in cloud hosting (Streamlit Cloud, GCP, AWS)
+    try:
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            host = headers.get("host") or headers.get("Host")
+            if host:
+                proto = headers.get("x-forwarded-proto", "https" if "localhost" not in str(host) and "127.0.0.1" not in str(host) else "http")
+                return f"{proto}://{host}".rstrip("/")
+    except Exception:
+        pass
+
+    return "http://localhost:8501"
+
+import zoneinfo
+import datetime
+
+# curate TIMEZONE_OPTIONS sorted alphabetically from IANA database
+_raw_zones = sorted(list(zoneinfo.available_timezones()))
+TIMEZONE_OPTIONS = [z for z in _raw_zones if "/" in z and not z.startswith(("Etc/", "SystemV/", "US/"))]
+if "Europe/London" not in TIMEZONE_OPTIONS:
+    TIMEZONE_OPTIONS.append("Europe/London")
+TIMEZONE_OPTIONS = sorted(list(set(TIMEZONE_OPTIONS)))
+
+def get_tz_offset_hours(tz_name):
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+        now = datetime.datetime.now(tz)
+        return now.utcoffset().total_seconds() / 3600.0
+    except Exception:
+        return 0.0
+
+def parse_timezone_offset(tz_name):
+    # Stabilized fallback for old code: return the numerical offset from standard ZoneInfo!
+    return get_tz_offset_hours(tz_name)
+
+def get_timezone_info(country_name):
+    db = {
+        "United States": "America/New_York",
+        "Canada": "America/Toronto",
+        "United Kingdom": "Europe/London",
+        "Ireland": "Europe/Dublin",
+        "Germany": "Europe/Berlin",
+        "France": "Europe/Paris",
+        "Spain": "Europe/Madrid",
+        "Italy": "Europe/Rome",
+        "Netherlands": "Europe/Amsterdam",
+        "Nigeria": "Africa/Lagos",
+        "Ghana": "Africa/Accra",
+        "Kenya": "Africa/Nairobi",
+        "Egypt": "Africa/Cairo",
+        "South Africa": "Africa/Johannesburg",
+        "India": "Asia/Kolkata",
+        "Singapore": "Asia/Singapore",
+        "Japan": "Asia/Tokyo",
+        "China": "Asia/Shanghai",
+        "Australia": "Australia/Sydney",
+        "New Zealand": "Pacific/Auckland",
+        "Brazil": "America/Sao_Paulo",
+        "Argentina": "America/Argentina/Buenos_Aires",
+        "Mexico": "America/Mexico_City",
+    }
+    return db.get(country_name, "Europe/London"), 0.0
+
+def guess_timezone_from_email(email):
+    if not email or "@" not in email:
+        return "Europe/London"
+    
+    parts = email.lower().split(".")
+    tld = parts[-1]
+    
+    tld_to_tz = {
+        "ng": "Africa/Lagos",
+        "de": "Europe/Berlin",
+        "fr": "Europe/Paris",
+        "es": "Europe/Madrid",
+        "it": "Europe/Rome",
+        "nl": "Europe/Amsterdam",
+        "uk": "Europe/London",
+        "ca": "America/Toronto",
+        "au": "Australia/Sydney",
+        "jp": "Asia/Tokyo",
+        "in": "Asia/Kolkata",
+        "nz": "Pacific/Auckland",
+        "br": "America/Sao_Paulo",
+        "za": "Africa/Johannesburg",
+        "eg": "Africa/Cairo",
+        "ke": "Africa/Nairobi",
+        "cn": "Asia/Shanghai",
+        "sg": "Asia/Singapore",
+        "mx": "America/Mexico_City"
+    }
+    
+    if tld in tld_to_tz:
+        return tld_to_tz[tld]
+        
+    if len(parts) >= 2 and parts[-2] == "co" and tld == "uk":
+        return "Europe/London"
+        
+    return "Europe/London"
+
+def display_timezone_converter(mentee_country, mentor_country):
+    mentee_tz, _ = get_timezone_info(mentee_country)
+    mentor_tz, _ = get_timezone_info(mentor_country)
+    display_timezone_converter_from_tz(mentee_tz, mentor_tz, mentor_country)
+
+def convert_local_to_utc_string(local_date, local_time, iana_tz):
+    from zoneinfo import ZoneInfo
+    dt = datetime.datetime.combine(local_date, local_time)
+    local_dt = dt.replace(tzinfo=ZoneInfo(iana_tz))
+    utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+    return utc_dt.isoformat()
+
+def convert_utc_string_to_local(utc_str, iana_tz):
+    from zoneinfo import ZoneInfo
+    try:
+        if utc_str.endswith("Z"):
+            utc_str = utc_str[:-1]
+        if "/" in utc_str:
+            start_str, end_str = utc_str.split("/")
+            if start_str.endswith("Z"): start_str = start_str[:-1]
+            if end_str.endswith("Z"): end_str = end_str[:-1]
+            
+            start_dt = datetime.datetime.fromisoformat(start_str).replace(tzinfo=ZoneInfo("UTC"))
+            end_dt = datetime.datetime.fromisoformat(end_str).replace(tzinfo=ZoneInfo("UTC"))
+            local_start = start_dt.astimezone(ZoneInfo(iana_tz))
+            local_end = end_dt.astimezone(ZoneInfo(iana_tz))
+            return f"{local_start.strftime('%A, %b %d, %Y at %I:%M %p')} - {local_end.strftime('%I:%M %p')}"
+        else:
+            utc_dt = datetime.datetime.fromisoformat(utc_str).replace(tzinfo=ZoneInfo("UTC"))
+            local_dt = utc_dt.astimezone(ZoneInfo(iana_tz))
+            return local_dt.strftime("%A, %b %d, %Y at %I:%M %p")
+    except Exception:
+        return utc_str
+
+def display_timezone_converter_from_tz(mentee_tz, mentor_tz, mentor_country, mentor_name="your mentor"):
+    mentee_offset = get_tz_offset_hours(mentee_tz)
+    mentor_offset = get_tz_offset_hours(mentor_tz)
+    
+    diff = mentee_offset - mentor_offset
+    diff_str = f"{abs(diff):.1f} hours ahead of" if diff > 0 else (f"{abs(diff):.1f} hours behind" if diff < 0 else "in the same timezone as")
+    if diff == int(diff):
+        diff_str = f"{abs(int(diff))} hours ahead of" if diff > 0 else (f"{abs(int(diff))} hours behind" if diff < 0 else "in the same timezone as")
+        
+    st.markdown(
+        f"""
+        🗺️ **Timezone Helper:**
+        * Your Timezone: **{mentee_tz}** (UTC{'+' if mentee_offset >= 0 else ''}{mentee_offset:+.1f} hours)
+        * Mentor's Timezone: **{mentor_tz}** ({mentor_country or 'Not stated'}) (UTC{'+' if mentor_offset >= 0 else ''}{mentor_offset:+.1f} hours)
+        * You are **{diff_str}** {mentor_name}.
+        """
+    )
+    
+    if diff != 0:
+        st.markdown("**Quick Conversion Guide:**")
+        slots = [9, 13, 17]
+        guide_lines = []
+        for s in slots:
+            m_time_str = f"{s if s <= 12 else s-12}:00 {'AM' if s < 12 else 'PM'}"
+            local_hour = int((s + diff) % 24)
+            local_time_str = f"{local_hour if local_hour <= 12 else local_hour-12}:00 {'AM' if local_hour < 12 or local_hour == 24 else 'PM'}"
+            if local_hour == 0 or local_hour == 12:
+                local_time_str = "12:00 AM" if local_hour == 0 else "12:00 PM"
+            guide_lines.append(f"* Mentor **{m_time_str}** = Your Local **{local_time_str}**")
+        st.markdown("\n".join(guide_lines))
+
+def display_mentor_availability(note, mentee_profile_data, mentor_profile_data=None):
+    if not note:
+        st.info("No availability notes shared yet.")
+        return
+        
+    default_tz = "UTC+00:00 (London, GMT)"
+    if mentee_profile_data:
+        if isinstance(mentee_profile_data, dict):
+            m_profile = mentee_profile_data.get('mentee') if 'mentee' in mentee_profile_data else mentee_profile_data
+            user_email = mentee_profile_data.get('user', {}).get('email')
+            default_tz = m_profile.get('timezone') or mentee_profile_data.get('mentee_timezone') or (guess_timezone_from_email(user_email) if user_email else get_timezone_info(m_profile.get('country', 'United Kingdom'))[0])
+        else:
+            default_tz = get_timezone_info(mentee_profile_data)[0]
+            
+    match_id = "default"
+    if isinstance(mentor_profile_data, dict) and 'id' in mentor_profile_data:
+        match_id = mentor_profile_data['id']
+        
+    import hashlib
+    note_hash = hashlib.md5(note.encode('utf-8')).hexdigest()[:8] if note else "empty"
+    selectbox_key = f"active_tz_selector_{match_id}_{note_hash}"
+    
+    col_tz1, col_tz2 = st.columns([6, 4])
+    with col_tz1:
+        st.write("🌍 **Verify / Change Your Timezone:**")
+    with col_tz2:
+        mentee_tz = st.selectbox(
+            "Your Timezone", 
+            TIMEZONE_OPTIONS, 
+            index=TIMEZONE_OPTIONS.index(default_tz) if default_tz in TIMEZONE_OPTIONS else 12,
+            key=selectbox_key,
+            label_visibility="collapsed"
+        )
+        
+    if mentee_profile_data and isinstance(mentee_profile_data, dict):
+        m_profile = mentee_profile_data.get('mentee') if 'mentee' in mentee_profile_data else mentee_profile_data
+        if m_profile.get('timezone') != mentee_tz:
+            api_update_profile({"timezone": mentee_tz})
+            st.session_state['profile'] = None
+            st.rerun()
+            
+    if note.startswith("UTC_DTS:"):
+        try:
+            parts = note[8:].split("|")
+            dts_part = parts[0]
+            note_part = parts[1][5:] if len(parts) > 1 and parts[1].startswith("NOTE:") else ""
+            
+            utc_strs = dts_part.split(",")
+            
+            st.write("📅 **Mentor's Proposed Slots (Converted to your timezone):**")
+            st.write(f"🗺️ *Your Active Timezone:* **{mentee_tz}**")
+            
+            options = []
+            for idx, utc_str in enumerate(utc_strs):
+                if utc_str.strip():
+                    local_time_str = convert_utc_string_to_local(utc_str, mentee_tz)
+                    options.append(local_time_str)
+            options.append("None of these work / Coordinate Custom Time")
+            
+            selected_slot = st.radio("⚡ **Select Your Preferred Slot:**", options, key=f"preferred_slot_select_{note[:20]}")
+            st.session_state['selected_scheduled_slot'] = selected_slot
+                    
+            if note_part.strip():
+                st.write(f"💬 **Mentor's Note:** {note_part}")
+                
+            if mentor_profile_data:
+                mentor_tz = "Europe/London"
+                mentor_country = "Not stated"
+                mentor_name = "your mentor"
+                if isinstance(mentor_profile_data, dict):
+                    mentor_tz = mentor_profile_data.get('mentor_timezone') or mentor_profile_data.get('timezone')
+                    if not mentor_tz:
+                        m_profile = mentor_profile_data.get('mentor') if 'mentor' in mentor_profile_data else mentor_profile_data
+                        mentor_tz = m_profile.get('timezone') or get_timezone_info(m_profile.get('country', 'United Kingdom'))[0]
+                    mentor_country = mentor_profile_data.get('mentor_country') or mentor_profile_data.get('country', 'Not stated')
+                    mentor_name = mentor_profile_data.get('mentor_name', 'your mentor')
+                else:
+                    mentor_tz, _ = get_timezone_info(mentor_profile_data)
+                    mentor_country = mentor_profile_data
+                display_timezone_converter_from_tz(mentee_tz, mentor_tz, mentor_country, mentor_name)
+        except Exception as e:
+            st.info(f"💬 **Mentor's Shared Availability:**\n\n{note}")
+    else:
+        st.info(f"💬 **Mentor's Shared Availability:**\n\n{note}")
+        if mentor_profile_data:
+            mentor_tz = "Europe/London"
+            mentor_country = "Not stated"
+            mentor_name = "your mentor"
+            if isinstance(mentor_profile_data, dict):
+                mentor_tz = mentor_profile_data.get('mentor_timezone') or mentor_profile_data.get('timezone')
+                if not mentor_tz:
+                    m_profile = mentor_profile_data.get('mentor') if 'mentor' in mentor_profile_data else mentor_profile_data
+                    mentor_tz = m_profile.get('timezone') or get_timezone_info(m_profile.get('country', 'United Kingdom'))[0]
+                mentor_country = mentor_profile_data.get('mentor_country') or mentor_profile_data.get('country', 'Not stated')
+                mentor_name = mentor_profile_data.get('mentor_name', 'your mentor')
+            else:
+                mentor_tz, _ = get_timezone_info(mentor_profile_data)
+                mentor_country = mentor_profile_data
+            display_timezone_converter_from_tz(mentee_tz, mentor_tz, mentor_country, mentor_name)
+
+# Reference dropdown options from the dataset
+COUNTRIES = [
+    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria",
+    "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan",
+    "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia",
+    "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo (Congo-Brazzaville)", "Costa Rica",
+    "Croatia", "Cuba", "Cyprus", "Czechia (Czech Republic)", "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador",
+    "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Fiji", "Finland", "France",
+    "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau",
+    "Guyana", "Haiti", "Holy See", "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq",
+    "Ireland", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati",
+    "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania",
+    "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius",
+    "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar (formerly Burma)", "Namibia",
+    "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway",
+    "Oman", "Pakistan", "Palau", "Palestine State", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland",
+    "Portugal", "Qatar", "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino",
+    "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands",
+    "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland",
+    "Syria", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey",
+    "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu",
+    "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
+]
+ED_LEVELS = [
+    "Bachelor's degree (B.A., B.S., B.Eng., etc.)",
+    "Master's degree (M.A., M.S., M.Eng., MBA, etc.)",
+    "Some college/university study without earning a degree",
+    "Secondary school",
+    "Associate degree (A.A., A.S., etc.)",
+    "Other doctoral degree (Ph.D., Ed.D., etc.)",
+    "Professional degree (JD, MD, etc.)",
+    "Primary/elementary school",
+    "I never completed any formal education"
+]
+ALL_ROLES = [
+    "Developer, back-end", "Developer, full-stack", "Developer, front-end", 
+    "Developer, desktop or enterprise applications", "Developer, mobile", 
+    "DevOps specialist", "Database administrator", "System administrator", 
+    "Designer", "Developer, embedded applications or devices", 
+    "Data scientist or machine learning specialist", "Developer, QA or test", 
+    "Data or business analyst", "Academic researcher", "Engineer, data", 
+    "Engineering manager", "Product manager", "Scientist", "Educator", 
+    "Engineer, site reliability", "Senior executive/VP"
+]
+ALL_FACTORS = [
+    "Languages, frameworks, and other technologies I’d be working with",
+    "Office environment or company culture",
+    "Opportunities for professional development",
+    "Flex time or a flexible schedule",
+    "Remote work options",
+    "Industry that I’d be working in",
+    "Financial performance or funding status of the company or organization",
+    "Specific department or team I’d be working on",
+    "How widely used or influential the project I’d be working on is",
+    "Diversity of the company or organization",
+    "Family friendliness or maternity/paternity leave"
+]
+ORG_SIZES = [
+    "Just me - 1 person", "2 to 9 employees", "10 to 19 employees", 
+    "20 to 99 employees", "100 to 499 employees", "500 to 999 employees", 
+    "1,000 to 4,999 employees", "5,000 to 9,999 employees", "10,000 or more employees",
+    "Not stated"
+]
+
+st.set_page_config(page_title="Mentor Me — Secure Matching Platform", layout="wide")
+
+st.title("🤝 Mentor Me — Secure Matching Platform")
+st.caption(
+    "A secure, database-backed mentoring matches platform. "
+    "Sign up or log in to manage your profile and view matches."
+)
+
+# Session State Initialization
+if 'access_token' not in st.session_state:
+    st.session_state['access_token'] = None
+if 'profile' not in st.session_state:
+    st.session_state['profile'] = None
+if 'invite_code' not in st.session_state:
+    st.session_state['invite_code'] = None
+
+def fetch_profile():
+    if not st.session_state.get('access_token'):
+        return
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/users/me", headers=headers)
+        if response.status_code == 200:
+            st.session_state['profile'] = response.json()
+        else:
+            st.session_state['access_token'] = None
+            st.session_state['profile'] = None
+    except Exception:
+        st.session_state['access_token'] = None
+        st.session_state['profile'] = None
+
+# Capture invite code from URL parameters if present
+if "invite_code" in st.query_params:
+    st.session_state['invite_code'] = st.query_params["invite_code"]
+
+# Handle OAuth Redirection Callbacks (Google & Facebook)
+if "code" in st.query_params:
+    _auth_code = st.query_params.get("code")
+    _state_raw = st.query_params.get("state", "")
+    _prov = "google"
+    _role = "MENTEE"
+    _mode = "signin"
+    _inv = None
+    
+    if _state_raw:
+        import urllib.parse
+        parsed_state = dict(urllib.parse.parse_qsl(_state_raw))
+        _prov = parsed_state.get("provider", "google")
+        _role = parsed_state.get("role", "MENTEE")
+        _mode = parsed_state.get("mode", "signin")
+        _inv = parsed_state.get("invite")
+    else:
+        _prov = st.query_params.get("provider", "google")
+        _role = st.query_params.get("role", "MENTEE")
+        _mode = st.query_params.get("mode", "signin")
+        _inv = st.query_params.get("invite_code")
+        
+    try:
+        payload = {"provider": _prov, "code": _auth_code, "role": _role, "mode": _mode, "invite_code": _inv}
+        resp = requests.post(f"{API_URL}/auth/sso/callback", json=payload)
+        if resp.status_code == 200:
+            st.session_state['access_token'] = resp.json()['access_token']
+            st.session_state['two_factor_challenge'] = None
+            st.session_state['sso_error'] = None
+            fetch_profile()
+        else:
+            err_msg = resp.json().get('detail', 'Google authentication failed.')
+            st.session_state['sso_error'] = err_msg
+    except Exception as e:
+        st.session_state['sso_error'] = f"Google Connection Error: {e}"
+        
+    for k in ["code", "provider", "role", "mode", "state", "invite_code", "scope", "authuser", "prompt", "hd"]:
+        if k in st.query_params:
+            del st.query_params[k]
+    st.rerun()
+
+elif "sso_provider" in st.query_params:
+    _prov = st.query_params.get("sso_provider")
+    _role = st.query_params.get("role", "MENTEE")
+    _mode = st.query_params.get("mode", "signin")
+    _inv = st.query_params.get("invite_code")
+    demo_email = f"alex.{_prov}@example.com"
+    demo_name = f"Alex ({_prov.capitalize()} User)"
+    demo_pic = f"https://api.dicebear.com/7.x/bottts/svg?seed={_prov}"
+    try:
+        payload = {
+            "provider": _prov,
+            "email": demo_email,
+            "name": demo_name,
+            "picture": demo_pic,
+            "role": _role,
+            "mode": _mode,
+            "invite_code": _inv
+        }
+        resp = requests.post(f"{API_URL}/auth/sso", json=payload)
+        if resp.status_code == 200:
+            st.session_state['access_token'] = resp.json()['access_token']
+            st.session_state['two_factor_challenge'] = None
+            st.session_state['sso_error'] = None
+            fetch_profile()
+        else:
+            err_msg = resp.json().get('detail', 'Authentication failed.')
+            st.session_state['sso_error'] = err_msg
+    except Exception as e:
+        st.session_state['sso_error'] = f"Connection error: {e}"
+        
+    for k in ["sso_provider", "role", "mode", "invite_code"]:
+        if k in st.query_params:
+            del st.query_params[k]
+    st.rerun()
+
+# Helper functions for API communication
+def api_login(email, password):
+    try:
+        response = requests.post(f"{API_URL}/auth/token", data={"username": email, "password": password})
+        if response.status_code == 200:
+            res_data = response.json()
+            if res_data.get("two_factor_required"):
+                st.session_state['two_factor_challenge'] = res_data["challenge_token"]
+                st.session_state['two_factor_email'] = res_data.get("email", email)
+                st.session_state['two_factor_hint'] = res_data.get("delivery_hint", "Enter your 6-digit security code.")
+                st.session_state['two_factor_preview'] = res_data.get("otp_code_preview")
+                return "2FA_REQUIRED", res_data.get("delivery_hint", "Please complete security verification.")
+            else:
+                st.session_state['access_token'] = res_data['access_token']
+                st.session_state['two_factor_challenge'] = None
+                fetch_profile()
+                return True, "Login successful!"
+        else:
+            detail = response.json().get("detail", "Login failed")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_verify_2fa(code):
+    challenge_token = st.session_state.get('two_factor_challenge')
+    if not challenge_token:
+        return False, "No active security challenge session. Please sign in again."
+    try:
+        response = requests.post(f"{API_URL}/auth/2fa/verify", json={"challenge_token": challenge_token, "code": code.strip()})
+        if response.status_code == 200:
+            res_data = response.json()
+            st.session_state['access_token'] = res_data['access_token']
+            st.session_state['two_factor_challenge'] = None
+            st.session_state['two_factor_preview'] = None
+            fetch_profile()
+            return True, "Security verification successful!"
+        else:
+            detail = response.json().get("detail", "Verification failed")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_resend_2fa():
+    challenge_token = st.session_state.get('two_factor_challenge')
+    if not challenge_token:
+        return False, "No active challenge session."
+    try:
+        response = requests.post(f"{API_URL}/auth/2fa/resend", json={"challenge_token": challenge_token})
+        if response.status_code == 200:
+            res_data = response.json()
+            st.session_state['two_factor_challenge'] = res_data["challenge_token"]
+            st.session_state['two_factor_preview'] = res_data.get("otp_code_preview")
+            return True, "New 6-digit security code generated!"
+        else:
+            detail = response.json().get("detail", "Failed to resend code")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_toggle_2fa(enabled: bool):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.post(f"{API_URL}/auth/2fa/toggle", json={"enabled": enabled}, headers=headers)
+        if response.status_code == 200:
+            fetch_profile()
+            return True, response.json().get("message", "Updated 2FA status.")
+        return False, response.json().get("detail", "Failed to update 2FA.")
+    except Exception as e:
+        return False, f"API Error: {e}"
+
+def api_sso_authenticate(provider: str, email: str, name: str = None, picture: str = None, oauth_id: str = None, role: str = "MENTEE", invite_code: str = None, token_or_code: str = None):
+    try:
+        payload = {
+            "provider": provider.lower(),
+            "email": email.strip(),
+            "name": name.strip() if name else None,
+            "picture": picture.strip() if picture else None,
+            "oauth_id": oauth_id.strip() if oauth_id else None,
+            "role": role.upper() if role else "MENTEE",
+            "invite_code": invite_code,
+            "token_or_code": token_or_code
+        }
+        response = requests.post(f"{API_URL}/auth/sso", json=payload)
+        if response.status_code == 200:
+            res_data = response.json()
+            st.session_state['access_token'] = res_data['access_token']
+            st.session_state['two_factor_challenge'] = None
+            st.session_state['two_factor_preview'] = None
+            fetch_profile()
+            action_desc = "Account created & signed in" if res_data.get("is_new_user") else "Signed in"
+            return True, f"✨ {action_desc} via {provider.capitalize()} successfully!"
+        else:
+            detail = response.json().get("detail", "SSO Authentication failed")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", invite_code: str = None):
+    try:
+        params = {"provider": provider, "role": role, "mode": mode}
+        if invite_code:
+            params["invite_code"] = invite_code
+        response = requests.get(f"{API_URL}/auth/sso/authorize-url", params=params)
+        if response.status_code == 200:
+            return response.json().get("auth_url")
+        return f"/?sso_provider={provider}&role={role}&mode={mode}"
+    except Exception:
+        return f"/?sso_provider={provider}&role={role}&mode={mode}"
+
+def api_signup(email, password, role, invite_code=None):
+    try:
+        payload = {"email": email, "password": password, "role": role.upper()}
+        if invite_code:
+            payload["invite_code"] = invite_code
+        response = requests.post(f"{API_URL}/auth/signup", json=payload)
+        if response.status_code == 201:
+            return True, "Registration successful! You can now log in."
+        else:
+            detail = response.json().get("detail", "Signup failed")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_nominate_mentor(name, contact, tech_focus, custom_message=None):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    payload = {
+        "mentor_name": name,
+        "mentor_contact": contact,
+        "tech_focus": tech_focus,
+        "custom_message": custom_message
+    }
+    try:
+        response = requests.post(f"{API_URL}/profile/nominate", json=payload, headers=headers)
+        if response.status_code == 200:
+            return True, response.json()
+        else:
+            try:
+                detail = response.json().get('detail', response.text)
+            except Exception:
+                detail = response.text or f"Server returned status {response.status_code}"
+            return False, f"Failed to nominate: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_get_nominations():
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/profile/nominations", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_mark_nomination_contacted(nomination_id):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.post(f"{API_URL}/profile/nominate/{nomination_id}/contacted", headers=headers)
+        return response.status_code == 200
+    except Exception:
+        return False
+
+def api_send_nomination_followup(nomination_id, custom_message=None, subject=None):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    payload = {
+        "custom_message": custom_message,
+        "subject": subject
+    }
+    try:
+        response = requests.post(f"{API_URL}/profile/nominate/{nomination_id}/follow-up", json=payload, headers=headers)
+        if response.status_code == 200:
+            return True, response.json()
+        else:
+            try:
+                detail = response.json().get('detail', response.text)
+            except Exception:
+                detail = response.text or f"Status {response.status_code}"
+            return False, f"Failed to send follow-up: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_evaluate_profile(profile_url):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    payload = {"profile_url": profile_url}
+    try:
+        response = requests.post(f"{API_URL}/profile/evaluate", json=payload, headers=headers)
+        if response.status_code == 200:
+            return True, response.json()
+        else:
+            detail = response.json().get('detail', 'Unknown error')
+            return False, f"Evaluation failed: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_search_orcid(query, country):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    params = {"q": query}
+    if country:
+        params["country"] = country
+    try:
+        response = requests.get(f"{API_URL}/orcid/search", params=params, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_search_github(query, country):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    params = {"q": query}
+    if country:
+        params["country"] = country
+    try:
+        response = requests.get(f"{API_URL}/github/search", params=params, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_search_linkedin(query, country):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    params = {"q": query}
+    if country:
+        params["country"] = country
+    try:
+        response = requests.get(f"{API_URL}/linkedin/search", params=params, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def build_app_linkedin_deep_link(
+    role: str = "",
+    skills: list = None,
+    country: str = None,
+    seniority: str = None,
+    mentorship_intent: bool = True,
+    women_in_tech: bool = False,
+    custom_keywords: str = ""
+) -> dict:
+    """
+    Constructs a precision LinkedIn People Search Deep Link URL with Boolean query filters.
+    """
+    import urllib.parse
+    query_parts = []
+    breakdown = {}
+
+    clean_roles = []
+    if role and role.strip():
+        raw_roles = [r.strip() for r in role.replace(";", ",").split(",") if r.strip()]
+        for r in raw_roles:
+            clean_roles.append(f'"{r}"' if " " in r else r)
+        if clean_roles:
+            if len(clean_roles) == 1:
+                query_parts.append(clean_roles[0])
+            else:
+                query_parts.append(f"({' OR '.join(clean_roles[:3])})")
+    breakdown["roles"] = clean_roles
+
+    clean_skills = []
+    if skills:
+        if isinstance(skills, str):
+            skills = [s.strip() for s in skills.replace(";", ",").split(",") if s.strip()]
+        for s in skills:
+            s_clean = s.strip()
+            if s_clean:
+                clean_skills.append(f'"{s_clean}"' if " " in s_clean else s_clean)
+        if clean_skills:
+            if len(clean_skills) == 1:
+                query_parts.append(clean_skills[0])
+            else:
+                query_parts.append(f"({' OR '.join(clean_skills[:4])})")
+    breakdown["skills"] = clean_skills
+
+    if seniority and seniority.strip() and seniority.strip().lower() not in ("any", "none", "all"):
+        sen_clean = seniority.strip()
+        if sen_clean.lower() in ("senior", "lead", "principal", "director", "vp", "head of"):
+            query_parts.append(f'"{sen_clean}"' if " " in sen_clean else sen_clean)
+            breakdown["seniority"] = sen_clean
+        else:
+            query_parts.append(sen_clean)
+            breakdown["seniority"] = sen_clean
+    else:
+        breakdown["seniority"] = None
+
+    if women_in_tech:
+        query_parts.append('("women in tech" OR "female leader" OR "women who code")')
+        breakdown["women_in_tech"] = True
+    else:
+        breakdown["women_in_tech"] = False
+
+    if country and country.strip() and country.strip().lower() not in ("any", "international", "global", "all"):
+        c_clean = country.strip()
+        query_parts.append(f'"{c_clean}"')
+        breakdown["country"] = c_clean
+    else:
+        breakdown["country"] = None
+
+    if custom_keywords and custom_keywords.strip():
+        ck_clean = custom_keywords.strip()
+        query_parts.append(ck_clean)
+        breakdown["custom_keywords"] = ck_clean
+    else:
+        breakdown["custom_keywords"] = None
+
+    if mentorship_intent:
+        query_parts.append("(mentor OR mentoring OR mentorship)")
+        breakdown["mentorship_intent"] = True
+    else:
+        breakdown["mentorship_intent"] = False
+
+    raw_query = " ".join(query_parts).strip()
+    if not raw_query:
+        raw_query = "software engineer mentor"
+
+    encoded = urllib.parse.quote_plus(raw_query)
+    deep_link_url = f"https://www.linkedin.com/search/results/people/?keywords={encoded}"
+
+    return {
+        "deep_link_url": deep_link_url,
+        "raw_query": raw_query,
+        "query_breakdown": breakdown
+    }
+
+def get_linkedin_deep_link(
+    query: str = "",
+    country: str = None,
+    skills: list = None,
+    seniority: str = None,
+    women_in_tech: bool = False,
+    mentorship_intent: bool = True
+) -> str:
+    res = build_app_linkedin_deep_link(
+        role=query,
+        skills=skills,
+        country=country,
+        seniority=seniority,
+        women_in_tech=women_in_tech,
+        mentorship_intent=mentorship_intent
+    )
+    return res["deep_link_url"]
+
+def generate_app_linkedin_outreach_templates(
+    mentee_name: str = "Mentee",
+    mentee_role: str = "Software Engineer",
+    mentor_name: str = "Mentor",
+    tech_focus: str = "Engineering Leadership",
+    invite_link: str = None
+):
+    if not invite_link:
+        invite_link = f"{get_app_base_url()}/?invite_code=PENDING"
+    m_name = mentor_name.strip() if mentor_name else "there"
+    me_name = mentee_name.strip() if mentee_name else "A Mentee"
+    focus = tech_focus.strip() if tech_focus else "your field"
+    role = mentee_role.strip() if mentee_role else "Software Engineering"
+    
+    note_candidate = f"Hi {m_name}, inspired by your work in {focus}. I'm an early-career {role} and would love to connect to learn from your career journey. Best, {me_name}"
+    if len(note_candidate) > 295:
+        note_candidate = f"Hi {m_name}, inspired by your work in {focus}. I'd value connecting with experienced leaders in this field. Best, {me_name}"
+    if len(note_candidate) > 295:
+        note_candidate = f"Hi {m_name}, I'd love to connect and follow your work in {focus}. Best, {me_name}"
+        
+    inmail_candidate = (
+        f"Hi {m_name},\n\n"
+        f"I came across your profile and was really inspired by your leadership and expertise in {focus}.\n\n"
+        f"I am currently an early-career technologist developing my skills in {role}, and I am seeking guidance from experienced mentors to navigate this career path effectively.\n\n"
+        f"If your schedule permits, I would be deeply grateful for the opportunity to connect for a brief 15-20 minute chat or periodic mentoring.\n\n"
+        f"I am also using the Mentor Me platform to organise mentoring goals and scheduling:\n"
+        f"{invite_link}\n\n"
+        f"Thank you so much for your time and for giving back to the community!\n\n"
+        f"Warm regards,\n{me_name}"
+    )
+
+    return {
+        "connection_note": note_candidate,
+        "connection_note_length": len(note_candidate),
+        "inmail_message": inmail_candidate
+    }
+
+def api_update_profile(profile_data):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.put(f"{API_URL}/profile", json=profile_data, headers=headers)
+        if response.status_code == 200:
+            st.session_state['profile'] = response.json()
+            return True, "Profile updated successfully!"
+        else:
+            detail = response.json().get("detail", "Failed to update profile")
+            return False, f"Error: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_get_matches():
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/matches", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Error fetching matches: {response.json().get('detail')}")
+            return []
+    except Exception as e:
+        st.error(f"API Connection Error: {e}")
+        return []
+
+def api_match_action(match_id, action, availability_note=None):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        payload = {"match_id": match_id, "action": action}
+        if availability_note:
+            payload["availability_note"] = availability_note
+        response = requests.post(f"{API_URL}/matches/action", json=payload, headers=headers)
+        return response.status_code == 200
+    except Exception as e:
+        st.error(f"API Connection Error: {e}")
+        return False
+
+def api_mark_match_notified(match_id):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.post(f"{API_URL}/matches/{match_id}/notify-seen", headers=headers)
+        return response.status_code == 200
+    except Exception:
+        return False
+
+def api_get_match_history():
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/matches/history", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        st.error(f"API Connection Error: {e}")
+        return []
+
+def api_upload_cv(file_bytes, filename):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    files = {"file": (filename, file_bytes, "application/pdf")}
+    try:
+        response = requests.post(f"{API_URL}/profile/cv", headers=headers, files=files)
+        if response.status_code == 200:
+            return True, "CV uploaded successfully!"
+        else:
+            detail = response.json().get('detail', 'Unknown error')
+            return False, f"Upload failed: {detail}"
+    except Exception as e:
+        return False, f"Error reaching API: {str(e)}"
+
+def api_get_cv(user_id):
+    try:
+        response = requests.get(f"{API_URL}/profile/cv/{user_id}")
+        if response.status_code == 200:
+            return response.content
+        return None
+    except Exception:
+        return None
+
+def display_pdf_inline(pdf_bytes):
+    import base64
+    base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
+
+def api_upload_profile_pic(file_bytes, filename):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    files = {"file": (filename, file_bytes, "image/png")}
+    try:
+        response = requests.post(f"{API_URL}/profile/profile-pic", headers=headers, files=files)
+        if response.status_code == 200:
+            return True, "Profile picture uploaded successfully!"
+        else:
+            detail = response.json().get('detail', 'Unknown error')
+            return False, f"Upload failed: {detail}"
+    except Exception as e:
+        return False, f"Error reaching API: {str(e)}"
+
+def api_get_profile_pic(user_id):
+    try:
+        response = requests.get(f"{API_URL}/profile/profile-pic/{user_id}")
+        if response.status_code == 200:
+            return response.content
+        return None
+    except Exception:
+        return None
+
+def api_delete_profile_pic():
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.delete(f"{API_URL}/profile/profile-pic", headers=headers)
+        if response.status_code == 200:
+            return True, "Profile picture removed successfully!"
+        else:
+            detail = response.json().get('detail', 'Unknown error')
+            return False, f"Removal failed: {detail}"
+    except Exception as e:
+        return False, f"Error reaching API: {str(e)}"
+
+def api_reset_database():
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.post(f"{API_URL}/admin/reset", headers=headers)
+        if response.status_code == 200:
+            return True, response.json().get("message", "Database reset completed.")
+        else:
+            detail = response.json().get('detail', 'Unknown error')
+            return False, f"Reset failed: {detail}"
+    except Exception as e:
+        return False, f"Error reaching API: {str(e)}"
+
+def api_forgot_password(email: str):
+    try:
+        response = requests.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
+        if response.status_code == 200:
+            return True, response.json()
+        return False, response.json().get("detail", "Failed to initiate password reset.")
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_reset_password(challenge_token: str, code: str, new_password: str):
+    try:
+        payload = {
+            "challenge_token": challenge_token,
+            "code": code.strip(),
+            "new_password": new_password
+        }
+        response = requests.post(f"{API_URL}/auth/reset-password", json=payload)
+        if response.status_code == 200:
+            return True, response.json().get("message", "Password reset successful!")
+        return False, response.json().get("detail", "Failed to reset password.")
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_get_messages(match_id: str):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/messages/{match_id}", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_send_message(match_id: str, content: str):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.post(
+            f"{API_URL}/messages/send",
+            json={"match_id": match_id, "content": content.strip()},
+            headers=headers
+        )
+        if response.status_code == 200:
+            return True, response.json()
+        return False, response.json().get("detail", "Failed to send message.")
+    except Exception as e:
+        return False, f"API Error: {e}"
+
+def api_get_unread_messages():
+    if not st.session_state.get('access_token'):
+        return {"total_unread": 0, "by_match": {}}
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = requests.get(f"{API_URL}/messages/unread-summary", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return {"total_unread": 0, "by_match": {}}
+    except Exception:
+        return {"total_unread": 0, "by_match": {}}
+
+def generate_google_calendar_url(title: str, description: str, location: str = "Virtual (Mentor Me Video / Call)", start_dt = None, end_dt = None):
+    import urllib.parse
+    if not start_dt:
+        start_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14)
+    if not end_dt:
+        end_dt = start_dt + datetime.timedelta(minutes=25)
+    
+    fmt = "%Y%m%dT%H%M%SZ"
+    dates_str = f"{start_dt.strftime(fmt)}/{end_dt.strftime(fmt)}"
+    
+    params = {
+        "action": "TEMPLATE",
+        "text": title,
+        "details": description,
+        "location": location,
+        "dates": dates_str
+    }
+    return f"https://calendar.google.com/calendar/render?{urllib.parse.urlencode(params)}"
+
+def generate_ics_calendar_file(title: str, description: str, location: str = "Virtual (Mentor Me Video / Call)", start_dt = None, end_dt = None):
+    import uuid
+    if not start_dt:
+        start_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14)
+    if not end_dt:
+        end_dt = start_dt + datetime.timedelta(minutes=25)
+        
+    fmt = "%Y%m%dT%H%M%SZ"
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime(fmt)
+    uid = f"mentorme-{uuid.uuid4().hex[:12]}@mentorme.app"
+    
+    clean_desc = description.replace("\n", "\\n").replace(",", "\\,")
+    clean_title = title.replace("\n", " ").replace(",", "\\,")
+    clean_loc = location.replace("\n", " ").replace(",", "\\,")
+    
+    ics_content = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//Mentor Me Platform//Mentorship Scheduler//EN\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "METHOD:PUBLISH\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{uid}\r\n"
+        f"DTSTAMP:{now_str}\r\n"
+        f"DTSTART:{start_dt.strftime(fmt)}\r\n"
+        f"DTEND:{end_dt.strftime(fmt)}\r\n"
+        f"SUMMARY:{clean_title}\r\n"
+        f"DESCRIPTION:{clean_desc}\r\n"
+        f"LOCATION:{clean_loc}\r\n"
+        "STATUS:CONFIRMED\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    return ics_content.encode("utf-8")
+
+def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key_suffix: str = ""):
+    st.markdown(f"#### 💬 Direct Conversation with {partner_name}")
+    st.caption("Secure, real-time messaging directly within the Mentor Me platform.")
+    
+    messages = api_get_messages(match_id)
+    
+    chat_container = st.container(height=320, border=True)
+    with chat_container:
+        if not messages:
+            st.info(f"👋 No messages yet. Send a greeting to {partner_name} to start your mentorship collaboration!")
+        else:
+            for msg in messages:
+                is_mine = msg.get('is_mine', False)
+                ts_str = msg.get('created_at', '')
+                time_label = ""
+                if ts_str:
+                    try:
+                        t_part = ts_str.split('T')[1][:5] if 'T' in ts_str else ts_str[-8:-3]
+                        d_part = ts_str.split('T')[0] if 'T' in ts_str else ""
+                        time_label = f"{d_part} {t_part}"
+                    except Exception:
+                        time_label = ""
+                        
+                if is_mine:
+                    with st.chat_message("user", avatar="🌱" if current_role == "MENTEE" else "🧭"):
+                        st.markdown(f"**You** <span style='font-size:0.75rem; color:#94a3b8; margin-left:8px;'>{time_label}</span>", unsafe_allow_html=True)
+                        st.write(msg.get('content', ''))
+                else:
+                    with st.chat_message("assistant", avatar="🧭" if current_role == "MENTEE" else "🌱"):
+                        import html as _html
+                        sender_label = _html.escape(msg.get('sender_name') or partner_name or "Mentor")
+                        st.markdown(f"**{sender_label}** <span style='font-size:0.75rem; color:#94a3b8; margin-left:8px;'>{time_label}</span>", unsafe_allow_html=True)
+                        st.write(msg.get('content', ''))
+                        
+    # Composer with unique key
+    suf = f"_{key_suffix}" if key_suffix else ""
+    with st.form(f"chat_composer_form_{match_id}{suf}", clear_on_submit=True):
+        col_inp, col_snd = st.columns([5, 1.2])
+        with col_inp:
+            msg_text = st.text_input("Type your message...", placeholder="Type a message...", key=f"chat_inp_{match_id}{suf}", label_visibility="collapsed")
+        with col_snd:
+            send_btn = st.form_submit_button("Send 📤", use_container_width=True)
+            if send_btn and msg_text.strip():
+                ok_s, res_s = api_send_message(match_id, msg_text.strip())
+                if ok_s:
+                    st.rerun()
+                else:
+                    st.error(res_s)
+
+def render_top_messaging_hub(current_role: str, user_profile: dict, matches_history: list):
+    st.write("")
+    st.write("")
+    unread_summary = api_get_unread_messages()
+    tot_unread = unread_summary.get('total_unread', 0)
+    chat_label = f"💬 ({tot_unread})" if tot_unread > 0 else "💬 Messages"
+    
+    with st.popover(chat_label, use_container_width=True):
+        st.markdown("### 💬 Direct Messages & Inquiries")
+        
+        connected_matches = [m for m in (matches_history or []) if m.get('status') == 'ACCEPTED']
+        proposed_matches = [m for m in (matches_history or []) if m.get('status') in ['PROPOSED', 'REQUESTED', 'PENDING']]
+        
+        active_search_matches = st.session_state.get('current_matches', [])
+        for sm in active_search_matches:
+            if not any(pm.get('id') == sm.get('id') for pm in proposed_matches) and not any(cm.get('id') == sm.get('id') for cm in connected_matches):
+                proposed_matches.append(sm)
+                
+        tab_active_chats, tab_inquiry = st.tabs(["💬 Active Chats", "✉️ Send Inquiry"])
+        
+        with tab_active_chats:
+            if not connected_matches:
+                st.info("No active connected mentorship pairs yet. Accept or receive connection requests to start direct messaging!")
+            else:
+                chat_options = {}
+                for m in connected_matches:
+                    partner_name = m.get('mentor_name') if current_role == 'MENTEE' else m.get('mentee_name', 'Partner')
+                    m_unread = unread_summary.get('by_match', {}).get(m['id'], 0)
+                    unread_tag = f" 🔴 ({m_unread} new)" if m_unread > 0 else ""
+                    chat_options[m['id']] = f"{partner_name}{unread_tag}"
+                    
+                selected_match_id = st.selectbox(
+                    "Select Conversation:",
+                    options=list(chat_options.keys()),
+                    format_func=lambda mid: chat_options.get(mid, "Conversation"),
+                    key=f"top_chat_picker_{current_role}"
+                )
+                
+                sel_match = next((m for m in connected_matches if m['id'] == selected_match_id), None)
+                if sel_match:
+                    p_name = sel_match.get('mentor_name') if current_role == 'MENTEE' else sel_match.get('mentee_name', 'Partner')
+                    display_in_app_chat(selected_match_id, p_name, current_role, key_suffix=f"top_bar_{current_role}")
+                    
+        with tab_inquiry:
+            st.caption("Send a direct introductory note to a proposed mentor or candidate in your pool.")
+            if not proposed_matches:
+                st.info("No proposed candidates in your active pool currently. Head to the **Platform Matches** tab to explore matches!")
+            else:
+                inq_options = {}
+                for m in proposed_matches:
+                    target_name = m.get('mentor_name') if current_role == 'MENTEE' else m.get('mentee_name', 'Candidate')
+                    dev_type = m.get('mentor_devtype' if current_role=='MENTEE' else 'mentee_devtype', '')
+                    dev_label = f" · {dev_type[:20]}" if dev_type else ""
+                    inq_options[m['id']] = f"{target_name}{dev_label} ({m.get('status', 'PROPOSED')})"
+                    
+                inq_match_id = st.selectbox(
+                    "Choose Candidate to Message:",
+                    options=list(inq_options.keys()),
+                    format_func=lambda mid: inq_options.get(mid, "Candidate"),
+                    key=f"top_inquiry_picker_{current_role}"
+                )
+                
+                target_m = next((m for m in proposed_matches if m['id'] == inq_match_id), None)
+                if target_m:
+                    t_name = target_m.get('mentor_name') if current_role == 'MENTEE' else target_m.get('mentee_name', 'Candidate')
+                    with st.form(f"inquiry_form_{inq_match_id}_{current_role}", clear_on_submit=True):
+                        inq_text = st.text_area(f"Introductory Note for {t_name}:", placeholder="Hi, I noticed our shared background and would love to connect for mentorship guidance...", height=100)
+                        send_inq = st.form_submit_button("Send Connection Note 🚀", use_container_width=True)
+                        if send_inq:
+                            if not inq_text.strip():
+                                st.error("Please write a short introductory note.")
+                            else:
+                                ok_inq, res_inq = api_send_message(inq_match_id, inq_text.strip())
+                                if ok_inq:
+                                    st.success(f"Introductory note sent to {t_name}!")
+                                    st.rerun()
+                                else:
+                                    st.error(res_inq)
+
+def call_openai_api(api_key, system_instruction, user_prompt, chat_history):
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    messages = [{"role": "system", "content": system_instruction}]
+    for msg in chat_history:
+        role_map = {"user": "user", "assistant": "assistant"}
+        messages.append({
+            "role": role_map.get(msg["role"], "user"),
+            "content": msg["content"]
+        })
+        
+    messages.append({
+        "role": "user",
+        "content": user_prompt
+    })
+    
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 800
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=25, verify=False)
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json['choices'][0]['message']['content']
+        else:
+            return f"Error from OpenAI API: {response.text} (Status Code: {response.status_code})"
+    except Exception as e:
+        return f"Failed to contact OpenAI API: {str(e)}"
+
+def call_gemini_api(api_key, system_instruction, user_prompt, chat_history):
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    contents = []
+    for msg in chat_history:
+        role_map = {"user": "user", "assistant": "model"}
+        contents.append({
+            "role": role_map.get(msg["role"], "user"),
+            "parts": [{"text": msg["content"]}]
+        })
+        
+    contents.append({
+        "role": "user",
+        "parts": [{"text": f"System Context: {system_instruction}\n\nUser Prompt: {user_prompt}"}]
+    })
+    
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 800
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=25, verify=False)
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"Error from Gemini API: {response.text} (Status Code: {response.status_code})"
+    except Exception as e:
+        return f"Failed to contact Gemini API: {str(e)}"
+
+def get_simulated_ai_response(user_prompt):
+    prompt_lower = user_prompt.lower()
+    if "brag" in prompt_lower or "sheet" in prompt_lower or "record" in prompt_lower:
+        return (
+            "### 📝 AI Career Advisor: How to Build a Brag Sheet\n\n"
+            "A brag sheet is a running log of your achievements. It is critical for self-advocacy. Here is a structure you can use:\n\n"
+            "1. **Project & Scope:** What did you work on? (e.g., *'Led migration of auth service to FastAPI'*)\n"
+            "2. **Impact & Metrics:** What was the business or technical outcome? (e.g., *'Reduced latency by 15% and eliminated 2 security vulnerabilities'*)\n"
+            "3. **Collaboration & Leadership:** Who did you work with or mentor? (e.g., *'Coordinated with frontend engineers and mentored 1 junior developer'*)\n"
+            "4. **Praise & Feedback:** Paste any Slack screenshots or email kudos from peers or stakeholders.\n\n"
+            "**Action Item:** Create a Google Doc called 'My Wins' and set a weekly reminder on Friday afternoons for 15 minutes to update it!"
+        )
+    elif "sponsor" in prompt_lower or "advocate" in prompt_lower:
+        return (
+            "### 📣 AI Career Advisor: Finding and Cultivating Sponsors\n\n"
+            "Unlike a mentor who guides you, a sponsor has the organizational power to advocate for you in performance reviews or project allocations.\n\n"
+            "Here is how to build sponsorship relationships:\n"
+            "- **Deliver & Align:** Ensure your work is high quality and aligns with the sponsor's business goals.\n"
+            "- **Make Your Work Visible:** Share progress updates in public channels. Leaders cannot sponsor work they don't know exists.\n"
+            "- **Ask for Specific Opportunities:** Instead of asking 'Will you sponsor me?', ask: *'I would love to lead the new database optimization initiative next quarter. If you think I'm ready, would you support my nomination in the planning session?'*"
+        )
+    elif "negotiat" in prompt_lower or "salary" in prompt_lower or "pay" in prompt_lower or "flexibility" in prompt_lower:
+        return (
+            "### 💵 AI Career Advisor: Self-Advocacy & Negotiation\n\n"
+            "Negotiating is not about demanding; it is about collaborative problem-solving. Use the **'I.N.T.R.O.'** method:\n\n"
+            "- **I - Information:** Research market benchmarks (e.g., Glassdoor, levels.fyi).\n"
+            "- **N - Numbers:** Ground your request in metrics from your brag sheet.\n"
+            "- **T - Together:** Frame the negotiation as a partnership (*'I want to ensure my compensation aligns with the value I'm delivering to this team'*).\n"
+            "- **R - Rehearse:** Practice saying your numbers out loud with your mentor.\n"
+            "- **O - Options:** Have fallback options like extra vacation days, remote work flexibility, or educational stipends."
+        )
+    elif "imposter" in prompt_lower or "confidence" in prompt_lower or "leader" in prompt_lower:
+        return (
+            "### 🔧 AI Career Advisor: Technical Leadership & Overcoming Imposter Syndrome\n\n"
+            "Our survey analysis shows that women's representation drops by nearly 83% from junior to senior/executive tiers, meaning role models are scarce. "
+            "Imposter syndrome is common when transitioning to technical leadership. Try these steps:\n\n"
+            "- **Evidence over Emotion:** When you feel like you don't belong, look at your brag sheet. Your presence is backed by objective performance.\n"
+            "- **Own the Code Reviews:** Offer constructive, high-quality reviews on pull requests. It is one of the fastest ways to build technical authority.\n"
+            "- **Drive Consensus:** You don't need to know all the answers. A great tech lead facilitates discussions and helps the team reach the best decision collectively."
+        )
+    else:
+        return (
+            "### 📚 AI Career Advisor: Welcome to Mentorship Coaching!\n\n"
+            "I am your AI Career Advisor. I can help you prepare for discussions with your mentor, build self-advocacy skills, or plan your career roadmaps. "
+            "Try asking me about:\n"
+            "- *\"How do I write a brag sheet?\"*\n"
+            "- *\"What is the difference between a mentor and a sponsor?\"*\n"
+            "- *\"How do I prepare for a salary negotiation?\"*\n"
+            "- *\"How do I deal with imposter syndrome as a tech lead?\"*"
+        )
+
+def render_copilot_tab(mentee):
+    # Inject custom premium styling
+    st.markdown("""
+        <style>
+        /* Header Card */
+        .copilot-header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #ffffff;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.12);
+            border: 1px solid #334155;
+        }
+        .copilot-header h3 {
+            color: #ffffff !important;
+            margin-top: 0 !important;
+            margin-bottom: 8px !important;
+            font-size: 1.55rem !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em;
+        }
+        .copilot-header p {
+            color: #94a3b8 !important;
+            font-size: 0.92rem !important;
+            line-height: 1.6 !important;
+            margin-bottom: 0 !important;
+        }
+        
+        /* Suggestion Buttons/Chips styling */
+        div.stButton > button {
+            border-radius: 20px !important;
+            border: 1px solid #cbd5e1 !important;
+            background-color: #ffffff !important;
+            color: #334155 !important;
+            font-size: 0.88rem !important;
+            font-weight: 500 !important;
+            padding: 10px 18px !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+            width: 100% !important;
+            text-align: left !important;
+            display: flex !important;
+            align-items: center !important;
+            white-space: normal !important;
+            height: auto !important;
+            min-height: 48px !important;
+        }
+        div.stButton > button:hover {
+            border-color: #3b82f6 !important;
+            color: #1d4ed8 !important;
+            background-color: #f0f7ff !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08) !important;
+        }
+        div.stButton > button:active {
+            transform: translateY(0) !important;
+        }
+        
+        /* Message action buttons (Copy & Edit icons) */
+        div[data-testid="stChatMessage"] div.stButton > button {
+            border-radius: 6px !important;
+            border: 1px solid #e2e8f0 !important;
+            background-color: #ffffff !important;
+            color: #64748b !important;
+            font-size: 0.95rem !important;
+            padding: 2px 8px !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            width: auto !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin-top: 2px !important;
+        }
+        div[data-testid="stChatMessage"] div.stButton > button:hover {
+            border-color: #3b82f6 !important;
+            color: #1d4ed8 !important;
+            background-color: #eff6ff !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        
+        /* Chat Area bubble styling & alignment */
+        div[data-testid="stChatMessage"] {
+            border-radius: 0px !important;
+            padding: 16px 0px !important;
+            margin-bottom: 0px !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-bottom: 1px solid #f1f5f9 !important;
+            background-color: transparent !important;
+            display: flex !important;
+            gap: 14px !important;
+        }
+        
+        /* Remove bubble-like alignment margins */
+        div[data-testid="stChatMessage"]:has([data-testid="chatAvatar-user"]),
+        div[data-testid="stChatMessage"]:has([data-testid="chatAvatar-assistant"]) {
+            margin-left: 0px !important;
+            margin-right: 0px !important;
+            background-color: transparent !important;
+            border: none !important;
+            border-bottom: 1px solid #f1f5f9 !important;
+        }
+        
+        /* Message avatar styling */
+        div[data-testid="stChatMessageAvatar"] {
+            border-radius: 50% !important;
+            border: 1px solid #cbd5e1 !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+            width: 32px !important;
+            height: 32px !important;
+            flex-shrink: 0 !important;
+        }
+        
+        /* Message content wrapper */
+        div[data-testid="stChatMessageContent"] {
+            padding: 0px !important;
+            background-color: transparent !important;
+            border: none !important;
+            font-size: 0.94rem !important;
+            line-height: 1.6 !important;
+            color: #1e293b !important;
+        }
+        
+        /* Divider line */
+        .copilot-divider {
+            height: 1px;
+            background-color: #e2e8f0;
+            margin: 24px 0 16px 0;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    import os
+    openai_env_key = (st.session_state.get("custom_openai_key") or os.environ.get("OPENAI_API_KEY", "")).strip()
+    gemini_env_key = (st.session_state.get("custom_gemini_key") or os.environ.get("GEMINI_API_KEY", "")).strip()
+    
+    provider = "simulated"
+    api_key = ""
+    badge_label = "Interactive Advisor"
+    
+    if gemini_env_key:
+        api_key = gemini_env_key
+        provider = "gemini"
+        badge_label = "Gemini AI Advisor"
+    elif openai_env_key:
+        api_key = openai_env_key
+        provider = "openai"
+        badge_label = "OpenAI AI Advisor"
+
+    # Beautiful header panel
+    st.markdown(f"""
+        <div class="copilot-header">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 28px;">💡</span>
+                    <h3 style="margin: 0; color: white !important;">AI Career Advisor</h3>
+                </div>
+                <span style="background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2); display: inline-block;">{badge_label}</span>
+            </div>
+            <p>
+                Get personalized, real-time guidance on career roadmapping, promotion reviews, salary negotiations, and technical leadership transitions. 
+                Your advisor is dynamically tailored to your unique professional profile and industry career progression frameworks.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    import uuid
+    welcome_msg = "Hello! I am your AI Career Advisor. Ask me anything about navigating your career, setting goals, or preparing for your next mentorship session."
+    
+    # Initialize Multi-Session State
+    if "chat_sessions" not in st.session_state or not st.session_state["chat_sessions"]:
+        init_id = "sess_welcome"
+        now_str = datetime.datetime.now().strftime("%b %d, %H:%M")
+        st.session_state["chat_sessions"] = [
+            {
+                "id": init_id,
+                "title": "Welcome Discussion",
+                "created_at": now_str,
+                "messages": [{"role": "assistant", "content": welcome_msg}]
+            }
+        ]
+        st.session_state["active_session_id"] = init_id
+        
+    # Retrieve currently active session
+    active_id = st.session_state.get("active_session_id")
+    active_session = next((s for s in st.session_state["chat_sessions"] if s["id"] == active_id), None)
+    if not active_session:
+        active_session = st.session_state["chat_sessions"][0]
+        st.session_state["active_session_id"] = active_session["id"]
+        
+    messages_list = active_session["messages"]
+    st.session_state["playbook_messages"] = messages_list
+        
+    # Top Action Toolbar: Discussion switcher, New Chat, and Delete buttons
+    col_sess, col_new, col_del = st.columns([3.5, 1.4, 0.7])
+    
+    with col_sess:
+        sess_labels = {}
+        for s in st.session_state["chat_sessions"]:
+            m_len = len(s.get("messages", []))
+            sess_labels[s["id"]] = f"💬 {s['title']} · ({s.get('created_at', '')}) [{m_len} msgs]"
+            
+        all_ids = [s["id"] for s in st.session_state["chat_sessions"]]
+        current_idx = all_ids.index(active_session["id"]) if active_session["id"] in all_ids else 0
+            
+        picked_sess_id = st.selectbox(
+            "📜 Discussion Session History:",
+            options=all_ids,
+            index=current_idx,
+            format_func=lambda x: sess_labels.get(x, x),
+            key="chat_session_picker_box",
+            help="Select any prior discussion to continue or review earlier advice."
+        )
+        if picked_sess_id != active_session["id"]:
+            st.session_state["active_session_id"] = picked_sess_id
+            st.session_state["editing_msg_index"] = None
+            st.rerun()
+
+    with col_new:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("➕ New Chat", key="new_chat_btn", use_container_width=True, help="Start a new discussion session"):
+            new_id = str(uuid.uuid4())[:8]
+            now_str = datetime.datetime.now().strftime("%b %d, %H:%M")
+            new_num = len(st.session_state["chat_sessions"]) + 1
+            new_sess = {
+                "id": new_id,
+                "title": f"Discussion #{new_num}",
+                "created_at": now_str,
+                "messages": [{"role": "assistant", "content": welcome_msg}]
+            }
+            st.session_state["chat_sessions"].insert(0, new_sess)
+            st.session_state["active_session_id"] = new_id
+            st.session_state["editing_msg_index"] = None
+            st.rerun()
+
+    with col_del:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if len(st.session_state["chat_sessions"]) > 1:
+            if st.button("🗑️", key="delete_chat_btn", use_container_width=True, help="Delete this discussion session"):
+                st.session_state["chat_sessions"] = [s for s in st.session_state["chat_sessions"] if s["id"] != active_session["id"]]
+                st.session_state["active_session_id"] = st.session_state["chat_sessions"][0]["id"]
+                st.session_state["editing_msg_index"] = None
+                st.rerun()
+        
+    chat_container = st.container(height=450)
+    with chat_container:
+        for idx, message in enumerate(messages_list):
+            avatar = "🤖" if message["role"] == "assistant" else (mentee.get('profile_pic') or "👤")
+            role_name = "AI Advisor" if message["role"] == "assistant" else (mentee.get('name') or "You")
+            with st.chat_message(message["role"], avatar=avatar):
+                # In-place editing inside the chatbot box for user message
+                if message["role"] == "user" and st.session_state.get("editing_msg_index") == idx:
+                    st.markdown(f"**{role_name}** *(Editing question...)*")
+                    edited_val = st.text_area(
+                        "Edit your question:",
+                        value=message["content"],
+                        height=85,
+                        key=f"inline_edit_input_{idx}",
+                        label_visibility="collapsed"
+                    )
+                    b_save, b_cancel, _ = st.columns([1.5, 1.2, 5])
+                    with b_save:
+                        if st.button("💾 Save", key=f"inline_save_btn_{idx}", type="primary", use_container_width=True):
+                            prior_history = messages_list[:idx]
+                            active_session["messages"] = prior_history + [{"role": "user", "content": edited_val}]
+                            st.session_state["editing_msg_index"] = None
+                            
+                            with st.spinner("Advisor analyzing updated question..."):
+                                if provider in ["openai", "gemini"]:
+                                    _gender_ctx = mentee.get('gender') or 'Not stated'
+                                    _ally_pref = "Yes" if mentee.get('prefer_diversity_ally') else "No"
+                                    _exp_tier = mentee.get('exp_tier') or 'early-career'
+                                    system_inst = (
+                                        "You are an AI Career Advisor for the Mentor Me platform, a platform dedicated to "
+                                        "equitable mentorship pairing and career acceleration for early-career technologists and women in tech (aligned with SDG 5). "
+                                        "You support users to advocate for themselves, navigate sponsorships, handle workplace dynamics, "
+                                        "prepare for promotions, and transition to technical leadership. "
+                                        "Be warm, encouraging, practical, and action-oriented. "
+                                        "Offer tailored advice on imposter syndrome, negotiation, visibility, sponsorship vs mentorship, "
+                                        "and building allyship networks. "
+                                        f"Current user profile — Name: {mentee['name']}, Country: {mentee['country']}, "
+                                        f"Roles: {mentee['dev_type']}, Experience: {mentee['years_code_pro']} years, "
+                                        f"Career stage: {_exp_tier}, Gender: {_gender_ctx}, Prefers D&I Ally mentor: {_ally_pref}, "
+                                        f"Goals/Bio: {(mentee.get('additional_details') or 'Not provided')[:300]}."
+                                    )
+                                    if provider == "openai":
+                                        ai_response = call_openai_api(api_key.strip(), system_inst, edited_val, prior_history)
+                                    else:
+                                        ai_response = call_gemini_api(api_key.strip(), system_inst, edited_val, prior_history)
+                                else:
+                                    ai_response = get_simulated_ai_response(edited_val)
+                            active_session["messages"].append({"role": "assistant", "content": ai_response})
+                            st.session_state["playbook_messages"] = active_session["messages"]
+                            st.rerun()
+                    with b_cancel:
+                        if st.button("✖️ Cancel", key=f"inline_cancel_btn_{idx}", use_container_width=True):
+                            st.session_state["editing_msg_index"] = None
+                            st.rerun()
+                else:
+                    st.markdown(f"**{role_name}**")
+                    st.markdown(message["content"])
+                    
+                    # Sleek action icons inside message (Copy & Edit)
+                    if message["role"] == "assistant":
+                        if idx > 0:
+                            ic_col1, _ = st.columns([0.6, 9])
+                            with ic_col1:
+                                if st.button("📋", key=f"copy_icon_ast_{idx}", help="Copy response to clipboard"):
+                                    st.session_state[f"show_copy_ast_{idx}"] = not st.session_state.get(f"show_copy_ast_{idx}", False)
+                                    st.rerun()
+                            if st.session_state.get(f"show_copy_ast_{idx}"):
+                                st.code(message["content"], language=None)
+                    elif message["role"] == "user":
+                        ic_col1, ic_col2, _ = st.columns([0.6, 0.6, 8])
+                        with ic_col1:
+                            if st.button("📋", key=f"copy_icon_user_{idx}", help="Copy message to clipboard"):
+                                st.session_state[f"show_copy_u_{idx}"] = not st.session_state.get(f"show_copy_u_{idx}", False)
+                                st.rerun()
+                        with ic_col2:
+                            if st.button("✏️", key=f"edit_icon_user_{idx}", help="Edit this message in place"):
+                                st.session_state["editing_msg_index"] = idx
+                                st.rerun()
+                        if st.session_state.get(f"show_copy_u_{idx}"):
+                            st.code(message["content"], language=None)
+                
+    st.markdown('<div class="copilot-divider"></div>', unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 0.82rem; font-weight: 600; color: #64748b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;'>💡 Recommended Advisory Prompts</p>", unsafe_allow_html=True)
+    
+    cols_sug1, cols_sug2 = st.columns(2)
+    sug_prompt = None
+    if cols_sug1.button("📝 How to write a brag sheet?", key="sug_brag"):
+        sug_prompt = "How do I write a brag sheet to document my achievements and make my work visible at performance review time?"
+    if cols_sug2.button("📣 Mentor vs sponsor — what is the difference?", key="sug_sponsor"):
+        sug_prompt = "What is the difference between a mentor and a sponsor, and how do I find a sponsor as a woman in tech?"
+    if cols_sug1.button("💵 How do I negotiate salary as a woman in tech?", key="sug_neg"):
+        sug_prompt = "How do I prepare for a salary negotiation as a woman in tech? What are the common pitfalls and how do I advocate for myself?"
+    if cols_sug2.button("🔧 How do I handle imposter syndrome?", key="sug_imposter"):
+        sug_prompt = "How do I handle imposter syndrome as a woman in a technical role transitioning to tech lead?"
+    if cols_sug1.button("📈 How do I get promoted to senior engineer?", key="sug_promo"):
+        sug_prompt = "What concrete steps can I take to get promoted to senior engineer as a woman in tech?"
+    if cols_sug2.button("🗣️ How do I speak up in male-dominated meetings?", key="sug_visibility"):
+        sug_prompt = "How do I make my voice heard and increase my visibility in male-dominated team meetings and technical discussions?"
+        
+    user_query = st.chat_input("Ask your AI career advisor a question...")
+    if sug_prompt:
+        user_query = sug_prompt
+        
+    if user_query:
+        # Auto-update session title with question preview if default
+        if active_session["title"].startswith("Discussion #") or active_session["title"] == "Welcome Discussion":
+            clean_title = (user_query[:30] + "...") if len(user_query) > 30 else user_query
+            active_session["title"] = clean_title
+            
+        with chat_container:
+            user_avatar = (mentee.get('profile_pic') or "👤")
+            role_name = (mentee.get('name') or "You")
+            with st.chat_message("user", avatar=user_avatar):
+                st.markdown(f"**{role_name}**")
+                st.markdown(user_query)
+                
+        active_session["messages"].append({"role": "user", "content": user_query})
+        st.session_state["playbook_messages"] = active_session["messages"]
+        
+        with st.spinner("Advisor analyzing..."):
+            if provider in ["openai", "gemini"]:
+                _gender_ctx = mentee.get('gender') or 'Not stated'
+                _ally_pref = "Yes" if mentee.get('prefer_diversity_ally') else "No"
+                _exp_tier = mentee.get('exp_tier') or 'early-career'
+                system_inst = (
+                    "You are an AI Career Advisor for the Mentor Me platform, a platform dedicated to "
+                    "equitable mentorship pairing and career acceleration for early-career technologists and women in tech (aligned with SDG 5). "
+                    "You support users to advocate for themselves, navigate sponsorships, handle workplace dynamics, "
+                    "prepare for promotions, and transition to technical leadership. "
+                    "Be warm, encouraging, practical, and action-oriented. "
+                    "Offer tailored advice on imposter syndrome, negotiation, visibility, sponsorship vs mentorship, "
+                    "and building allyship networks. "
+                    f"Current user profile — Name: {mentee['name']}, Country: {mentee['country']}, "
+                    f"Roles: {mentee['dev_type']}, Experience: {mentee['years_code_pro']} years, "
+                    f"Career stage: {_exp_tier}, Gender: {_gender_ctx}, Prefers D&I Ally mentor: {_ally_pref}, "
+                    f"Goals/Bio: {(mentee.get('additional_details') or 'Not provided')[:300]}."
+                )
+                if provider == "openai":
+                    ai_response = call_openai_api(api_key.strip(), system_inst, user_query, active_session["messages"][:-1])
+                else:
+                    ai_response = call_gemini_api(api_key.strip(), system_inst, user_query, active_session["messages"][:-1])
+            else:
+                ai_response = get_simulated_ai_response(user_query)
+                
+        with chat_container:
+            with st.chat_message("assistant", avatar="🤖"):
+                st.markdown(f"**AI Advisor**")
+                st.markdown(ai_response)
+        active_session["messages"].append({"role": "assistant", "content": ai_response})
+        st.session_state["playbook_messages"] = active_session["messages"]
+        st.rerun()
+
+def display_user_avatar(name, user_id, size=80):
+    pic_bytes = api_get_profile_pic(user_id)
+    if pic_bytes:
+        import base64
+        encoded = base64.b64encode(pic_bytes).decode('utf-8')
+        html = f'<img src="data:image/png;base64,{encoded}" style="width: {size}px; height: {size}px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid #eaeaea;">'
+    else:
+        first_letter = name[0].upper() if name else "?"
+        colors = ["#4A90E2", "#50E3C2", "#F5A623", "#E28490", "#9B51E0", "#27AE60", "#2980B9"]
+        bg_color = colors[abs(hash(name or "")) % len(colors)]
+        html = f'<div style="display: flex; justify-content: center; align-items: center; width: {size}px; height: {size}px; border-radius: 50%; background-color: {bg_color}; color: white; font-size: {int(size * 0.45)}px; font-weight: bold; line-height: {size}px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid #eaeaea;">{first_letter}</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def display_welcome_header(name, user_id):
+    import html as _html
+    safe_name = _html.escape(name or "")
+    pic_bytes = api_get_profile_pic(user_id)
+    size = 60
+    if pic_bytes:
+        import base64
+        encoded = base64.b64encode(pic_bytes).decode('utf-8')
+        avatar_html = f'<img src="data:image/png;base64,{encoded}" style="width: {size}px; height: {size}px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid #ffffff;">'
+    else:
+        first_letter = safe_name[0].upper() if safe_name else "?"
+        colors = ["#4A90E2", "#50E3C2", "#F5A623", "#E28490", "#9B51E0", "#27AE60", "#2980B9"]
+        bg_color = colors[abs(hash(name or "")) % len(colors)]
+        avatar_html = f'<div style="display: flex; justify-content: center; align-items: center; width: {size}px; height: {size}px; border-radius: 50%; background-color: {bg_color}; color: white; font-size: {int(size * 0.45)}px; font-weight: bold; line-height: {size}px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid #ffffff;">{first_letter}</div>'
+    
+    header_html = f'<div style="display: flex; align-items: center; gap: 15px; margin-top: 10px; margin-bottom: 25px;">{avatar_html}<h1 style="margin: 0; font-family: inherit; font-size: 2.2rem; font-weight: 700; line-height: 1.2;">Welcome, {safe_name}!</h1></div>'
+    st.markdown(header_html, unsafe_allow_html=True)
+
+def display_profile_card(name, country, ed_level, roles, years, org_size, priorities, additional_details, user_id, email=None, contact_link=None, alternative_emails=None, linkedin_link=None):
+    import html as _html
+    safe_name = _html.escape(name or "")
+    safe_country = _html.escape(country or "")
+    safe_ed = _html.escape(ed_level or "No education specified")
+    pic_bytes = api_get_profile_pic(user_id)
+    size = 65
+    if pic_bytes:
+        import base64
+        encoded = base64.b64encode(pic_bytes).decode('utf-8')
+        avatar_html = f'<img src="data:image/png;base64,{encoded}" style="width: {size}px; height: {size}px; border-radius: 50%; object-fit: cover; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 2px solid #eaeaea;">'
+    else:
+        first_letter = safe_name[0].upper() if safe_name else "?"
+        colors = ["#4A90E2", "#50E3C2", "#F5A623", "#E28490", "#9B51E0", "#27AE60", "#2980B9"]
+        bg_color = colors[abs(hash(name or "")) % len(colors)]
+        avatar_html = f'<div style="display: flex; justify-content: center; align-items: center; width: {size}px; height: {size}px; border-radius: 50%; background-color: {bg_color}; color: white; font-size: {int(size * 0.45)}px; font-weight: bold; line-height: {size}px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 2px solid #eaeaea;">{first_letter}</div>'
+    
+    card_header_html = f'<div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eaeaea;">{avatar_html}<div><h3 style="margin: 0; font-size: 1.25rem; font-weight: bold;">{safe_name}</h3><span style="font-size: 0.9rem; color: #888;">🌍 {safe_country} | 🎓 {safe_ed}</span></div></div>'
+    st.markdown(card_header_html, unsafe_allow_html=True)
+    
+    st.write(f"💼 **Role(s):** {roles}")
+    st.write(f"⏳ **Professional Experience:** {years} years")
+    st.write(f"🏢 **Company Size:** {org_size or 'Not stated'}")
+    st.write(f"🌟 **Job Priorities:** {priorities or 'Not stated'}")
+    if additional_details:
+        st.write(f"📝 **Bio / Goals:**")
+        st.info(additional_details)
+    if email:
+        st.write(f"✉️ **Email Address:** `{email}`")
+    if alternative_emails:
+        st.write(f"📧 **Other Professional Email(s):** `{alternative_emails}`")
+    if contact_link:
+        st.write(f"🔗 **Scheduling / Contact Link:** [{contact_link}]({contact_link})")
+    if linkedin_link:
+        st.write(f"🔗 **LinkedIn Profile:** [{linkedin_link}]({linkedin_link})")
+
+def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix="signin"):
+    invite = st.session_state.get('invite_code')
+    clean_role = "MENTOR" if "mentor" in str(default_role).lower() else "MENTEE"
+    google_url = api_get_sso_url("google", role=clean_role, mode=mode, invite_code=invite)
+    
+    st.markdown("""
+        <div style="display: flex; align-items: center; text-align: center; margin: 20px 0 14px 0;">
+            <div style="flex-grow: 1; border-bottom: 1px solid #e2e8f0;"></div>
+            <span style="padding: 0 14px; color: #94a3b8; font-size: 0.85rem; font-weight: 500;">or</span>
+            <div style="flex-grow: 1; border-bottom: 1px solid #e2e8f0;"></div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    btn_label = "🌐 Continue with Google" if mode == "signin" else f"🌐 Register as {clean_role.capitalize()} with Google"
+    st.link_button(btn_label, google_url, use_container_width=True)
+
+# Application Views
+if st.session_state['access_token'] is None:
+    if st.session_state.get('sso_error'):
+        st.error(f"❌ {st.session_state['sso_error']}")
+        if st.button("Dismiss Notice", key="dismiss_sso_err_btn"):
+            del st.session_state['sso_error']
+            st.rerun()
+            
+    st.markdown("""
+        <div style="margin-bottom: 22px;">
+            <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentor Me</h2>
+            <p style="margin: 0; color: #64748b; font-size: 0.95rem;">Empowering equitable mentorship and career acceleration.</p>
+        </div>
+    """, unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Create Account"])
+    
+    with tab1:
+        if st.session_state.get('two_factor_challenge'):
+            # Step 2: Double Authentication (2FA)
+            st.markdown("""
+                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 18px; color: white; margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+                        <span style="font-size: 1.6rem;">🔐</span>
+                        <div>
+                            <h4 style="margin: 0; color: white; font-weight: 700; font-size: 1.15rem;">Double Authentication</h4>
+                            <span style="font-size: 0.82rem; color: #94a3b8;">Step 2 of 2: Security Verification</span>
+                        </div>
+                    </div>
+                    <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0;">
+                        Enter the 6-digit verification code to securely access your account.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            target_email = st.session_state.get('two_factor_email', 'your account')
+            st.caption(f"✉️ Verification destination: **{target_email}** (Code expires in 5 minutes)")
+            
+            with st.form("two_factor_verify_form"):
+                code_input = st.text_input("6-Digit Security Code", max_chars=6, placeholder="e.g. 123456", help="Enter the 6-digit numeric verification code")
+                verify_submit = st.form_submit_button("🚀 Verify & Complete Sign In", type="primary", use_container_width=True)
+                if verify_submit:
+                    if not code_input or len(code_input.strip()) < 6:
+                        st.error("Please enter a valid 6-digit security code.")
+                    else:
+                        v_ok, v_msg = api_verify_2fa(code_input.strip())
+                        if v_ok:
+                            st.success(v_msg)
+                            st.rerun()
+                        else:
+                            st.error(v_msg)
+                            
+            col_resend, col_back = st.columns([1, 1])
+            with col_resend:
+                if st.button("🔄 Resend Code", key="resend_2fa_btn", use_container_width=True):
+                    r_ok, r_msg = api_resend_2fa()
+                    if r_ok:
+                        st.success(r_msg)
+                        st.rerun()
+                    else:
+                        st.error(r_msg)
+            with col_back:
+                if st.button("← Back to Sign In", key="cancel_2fa_btn", use_container_width=True):
+                    st.session_state['two_factor_challenge'] = None
+                    st.session_state['two_factor_preview'] = None
+                    st.rerun()
+        else:
+            # Step 1: Primary Credentials
+            with st.form("login_form"):
+                email = st.text_input("Email", placeholder="e.g. user_90001@mentorme.demo or admin@mentorme.demo")
+                password = st.text_input("Password", type="password", placeholder="password123")
+                submit = st.form_submit_button("Sign In")
+                if submit:
+                    status_res, msg = api_login(email, password)
+                    if status_res == "2FA_REQUIRED":
+                        st.info(msg)
+                        st.rerun()
+                    elif status_res is True:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                        
+            # SSO Options for Sign In
+            render_sso_gateway_section(default_role="MENTEE", key_suffix="signin")
+            
+            st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+            with st.expander("🔑 Forgot Password?", expanded=False):
+                st.caption("Reset your password securely via a 6-digit verification code.")
+                if st.session_state.get('forgot_password_challenge'):
+                    target_fp_email = st.session_state.get('forgot_password_email', 'your email')
+                    st.info(f"✉️ Code sent to: **{target_fp_email}** (Valid for 15 minutes)")
+                    
+                    with st.form("reset_password_subform"):
+                        r_code = st.text_input("6-Digit Reset Code", max_chars=6, key="reset_code_input_field", placeholder="e.g. 123456")
+                        r_new_pass = st.text_input("New Password", type="password", key="reset_new_pass_input_field", placeholder="Minimum 6 characters")
+                        r_confirm_pass = st.text_input("Confirm New Password", type="password", key="reset_confirm_pass_input_field", placeholder="Re-enter your new password")
+                        r_sub = st.form_submit_button("🚀 Update & Save New Password", type="primary", use_container_width=True)
+                        if r_sub:
+                            if not r_code or len(r_code.strip()) < 6:
+                                st.error("Please enter the 6-digit verification code.")
+                            elif len(r_new_pass.strip()) < 6:
+                                st.error("Password must be at least 6 characters long.")
+                            elif r_new_pass != r_confirm_pass:
+                                st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
+                            else:
+                                ok_r, msg_r = api_reset_password(
+                                    challenge_token=st.session_state['forgot_password_challenge'],
+                                    code=r_code.strip(),
+                                    new_password=r_new_pass.strip()
+                                )
+                                if ok_r:
+                                    st.success(msg_r)
+                                    del st.session_state['forgot_password_challenge']
+                                    if 'forgot_password_preview' in st.session_state:
+                                        del st.session_state['forgot_password_preview']
+                                    if 'forgot_password_email' in st.session_state:
+                                        del st.session_state['forgot_password_email']
+                                    st.rerun()
+                                else:
+                                    st.error(msg_r)
+                    if st.button("← Cancel Password Reset", key="cancel_reset_btn_sub"):
+                        del st.session_state['forgot_password_challenge']
+                        if 'forgot_password_preview' in st.session_state:
+                            del st.session_state['forgot_password_preview']
+                        st.rerun()
+                else:
+                    with st.form("forgot_password_req_form"):
+                        fp_email = st.text_input("Enter your account email", key="forgot_email_in", placeholder="e.g. your_email@example.com")
+                        fp_submit = st.form_submit_button("📩 Send Reset Code", use_container_width=True)
+                        if fp_submit:
+                            if not fp_email or "@" not in fp_email:
+                                st.error("Please enter a valid email address.")
+                            else:
+                                fp_ok, fp_res = api_forgot_password(fp_email.strip())
+                                if fp_ok:
+                                    st.session_state['forgot_password_challenge'] = fp_res['challenge_token']
+                                    st.session_state['forgot_password_preview'] = fp_res.get('otp_code_preview')
+                                    st.session_state['forgot_password_email'] = fp_email.strip()
+                                    st.success(fp_res['message'])
+                                    st.rerun()
+                                else:
+                                    st.error(fp_res)
+                    
+    with tab2:
+        invite = st.session_state.get('invite_code')
+        if invite:
+            st.info(f"✨ **Applying Invite Code:** `{invite}`. You will be automatically connected to your nominating mentee upon signup!")
+            
+        with st.form("signup_form"):
+            new_email = st.text_input("Email", placeholder="e.g. Jane.Doe@example.com")
+            new_password = st.text_input("Password", type="password", placeholder="Minimum 8 characters")
+            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
+            role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
+            role = st.selectbox("I am signing up as a:", role_options)
+            submit = st.form_submit_button("Create Account")
+            if submit:
+                if len(new_password) < 8:
+                    st.error("Password must be at least 8 characters long.")
+                elif new_password != confirm_password:
+                    st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
+                else:
+                    success, msg = api_signup(new_email, new_password, role, invite)
+                    if success:
+                        st.success(msg)
+                        st.session_state['invite_code'] = None
+                    else:
+                        st.error(msg)
+                        
+        # Social Registration Options with Mentee / Mentor choice
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+        default_idx = 1 if invite else 0
+        signup_role_choice = st.radio(
+            "Register with Google as:",
+            options=["🌱 Mentee (seeking guidance)", "🧭 Mentor (sharing expertise)"],
+            index=default_idx,
+            horizontal=True,
+            key="social_signup_role_radio"
+        )
+        s_role = "MENTOR" if "Mentor" in signup_role_choice else "MENTEE"
+        render_sso_gateway_section(default_role=s_role, mode="signup", key_suffix="signup")
+else:
+    profile = st.session_state['profile']
+    if not profile:
+        fetch_profile()
+        profile = st.session_state['profile']
+    if not profile:
+        st.session_state['access_token'] = None
+        st.rerun()
+        
+    user = profile['user']
+    role = user['role']
+    
+    # Derive user display name from profile
+    display_name = None
+    if role == "MENTEE" and profile.get('mentee'):
+        display_name = profile['mentee'].get('name')
+    elif role == "MENTOR" and profile.get('mentor'):
+        display_name = profile['mentor'].get('name')
+        
+    if not display_name or display_name.strip() == "":
+        display_name = user.get('email', 'User')
+    
+    st.sidebar.header("Navigation Panel")
+    st.sidebar.markdown(f"👤 **User:** `{display_name}`")
+    st.sidebar.markdown(f"🛡️ **Role:** `{role}`")
+    
+    unread_summary = api_get_unread_messages()
+    tot_unread = unread_summary.get('total_unread', 0)
+    if tot_unread > 0:
+        st.sidebar.info(f"💬 **{tot_unread} unread message(s)** from your connections!")
+    
+    if st.sidebar.button("🚪 Log Out"):
+        st.session_state['access_token'] = None
+        st.session_state['profile'] = None
+        st.rerun()
+        
+    if role == "MENTEE":
+        mentee = profile['mentee']
+        history = api_get_match_history()
+        
+        # Focus workflow for reviewing mentor profile
+        if st.session_state.get('focus_review_profile'):
+            f_mentor_id = st.session_state['focus_review_profile']
+            f_match = next((m for m in history if m['mentor_id'] == f_mentor_id), None)
+            if f_match:
+                st.markdown("---")
+                st.markdown(f"## 👤 Review {f_match['mentor_name']}'s Profile")
+                display_profile_card(
+                    name=f_match['mentor_name'],
+                    country=f_match['mentor_country'],
+                    ed_level=f_match.get('mentor_ed_level'),
+                    roles=f_match['mentor_devtype'],
+                    years=f_match['mentor_years'],
+                    org_size=f_match['mentor_org_size'],
+                    priorities=f_match.get('mentor_job_factors'),
+                    additional_details=f_match.get('mentor_additional_details'),
+                    user_id=f_match['mentor_id'],
+                    email=f_match['mentor_email'],
+                    contact_link=f_match.get('mentor_contact_link'),
+                    linkedin_link=f_match.get('mentor_linkedin_link')
+                )
+                if st.button("⬅️ Return to Dashboard", key="close_focus_review"):
+                    del st.session_state['focus_review_profile']
+                    st.rerun()
+                st.markdown("---")
+                st.stop()
+        
+        # Focus workflow for scheduling
+        if st.session_state.get('focus_scheduling_match'):
+            f_match_id = st.session_state['focus_scheduling_match']
+            f_match = next((m for m in history if m['id'] == f_match_id), None)
+            if f_match:
+                st.markdown("---")
+                st.markdown("## 📅 Complete Scheduling with Mentor")
+                st.info(f"Welcome your mentor **{f_match['mentor_name']}**! They have shared their availability slots below.")
+                
+                if f_match.get('availability_note'):
+                    display_mentor_availability(f_match['availability_note'], profile, f_match)
+                
+                title_val = f"Mentor Me Intro Sync: {mentee['name']} & {f_match['mentor_name']}"
+                sel_slot = st.session_state.get('selected_scheduled_slot')
+                date_time_line = f"Date/Time: {sel_slot}\n" if (sel_slot and sel_slot != "None of these work / Coordinate Custom Time") else "Date/Time: To be coordinated\n"
+                
+                calendar_body = (
+                    f"Title: {title_val}\n"
+                    f"{date_time_line}"
+                    f"Duration: 25 minutes\n\n"
+                    f"Proposed Intro Sync Agenda:\n"
+                    f"1. Icebreaker & Introductions (5 mins)\n"
+                    f"   - Share briefly about our career journeys, tech stacks, and current roles.\n"
+                    f"2. Partnership Goals & Expectations (10 mins)\n"
+                    f"   - Discuss what we hope to accomplish together and align on mentoring scope.\n"
+                    f"3. Cadence & Communication Preferences (5 mins)\n"
+                    f"   - Align on meeting frequency (e.g., bi-weekly or monthly) and default messaging channels.\n"
+                    f"4. Action Items & Next Steps (5 mins)\n"
+                    f"   - Align on preparation for our first deep-dive discussion (Module 1: Career Progression).\n\n"
+                    f"Looking forward to connecting!"
+                )
+                st.markdown("**Copy / Edit Calendar Event Details:**")
+                st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{f_match_id}_{sel_slot}", label_visibility="collapsed")
+                st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
+                
+                import urllib.parse
+                coordinate_subject = "Scheduling: Mentor Me Intro Call"
+                coordinate_body = (
+                    f"Hi {f_match['mentor_name']},\n\n"
+                    f"I am excited to connect with you as my mentor on Mentor Me!\n\n"
+                    f"Please let me know a few days and times that work best for our introductory 25-minute call, "
+                    f"or feel free to send your calendar scheduling link if you have one. Once we select a slot, "
+                    f"I will send over a calendar invite.\n\n"
+                    f"Best regards,\n{mentee['name']}"
+                )
+                mailto_coord_url = f"mailto:{f_match['mentor_email']}?subject={urllib.parse.quote(coordinate_subject)}&body={urllib.parse.quote(coordinate_body)}"
+                st.markdown(f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%; margin-bottom:10px;">✉️ Email Mentor to Coordinate Times</button></a>', unsafe_allow_html=True)
+                
+                if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
+                    api_mark_match_notified(f_match_id)
+                    del st.session_state['focus_scheduling_match']
+                    st.session_state['profile'] = None
+                    st.rerun()
+                st.markdown("---")
+                st.stop()
+                
+        unnotified = [m for m in history if m['status'] == 'ACCEPTED' and not m.get('mentee_notified', False)]
+        unread_count = len(unnotified)
+        
+        col_greet, col_chat, col_bell = st.columns([6, 2, 2])
+        with col_greet:
+            display_welcome_header(mentee['name'], mentee['id'])
+            if st.button("📸 Edit Profile Photo", key="mentee_avatar_toggle"):
+                st.session_state['show_pic_uploader'] = not st.session_state.get('show_pic_uploader', False)
+                
+            # Conditionally display uploader when triggered in session state
+            if st.session_state.get('show_pic_uploader', False):
+                with st.container(border=True):
+                    st.info("📸 **Change Profile Picture**")
+                    profile_pic_file = st.file_uploader("Choose a photo (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="mentee_pic_upload_standalone")
+                    if profile_pic_file is not None:
+                        success, msg = api_upload_profile_pic(profile_pic_file.getvalue(), profile_pic_file.name)
+                        if success:
+                            st.success("Avatar updated!")
+                            st.session_state['profile'] = None
+                            st.session_state['show_pic_uploader'] = False
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    
+                    # Show Remove Picture option if user currently has an uploaded profile photo
+                    if mentee.get('profile_pic'):
+                        if st.button("🗑️ Remove Picture (Revert to Letter Avatar)", key="mentee_remove_pic_btn"):
+                            success, msg = api_delete_profile_pic()
+                            if success:
+                                st.success(msg)
+                                st.session_state['profile'] = None
+                                st.session_state['show_pic_uploader'] = False
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                                
+                    if st.button("❌ Close Photo Drawer", key="mentee_close_uploader_btn"):
+                        st.session_state['show_pic_uploader'] = False
+                        st.rerun()
+        with col_chat:
+            render_top_messaging_hub("MENTEE", profile, history)
+        with col_bell:
+            st.write("")
+            st.write("")
+            bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+            with st.popover(bell_label, use_container_width=True):
+                st.markdown("### 🔔 Notifications")
+                if unread_count == 0:
+                    st.write("No new notifications.")
+                else:
+                    for unm in unnotified:
+                        button_label = f"🎉 {unm['mentor_name']} accepted your connection request! (Click to view slots & connect)"
+                        if st.button(button_label, key=f"notif_redirect_btn_{unm['id']}", use_container_width=True):
+                            st.session_state['focus_scheduling_match'] = unm['id']
+                            st.rerun()
+                            
+                        # Compact dismiss option right below
+                        c_space, c_dismiss = st.columns([3, 1])
+                        with c_dismiss:
+                            if st.button("Dismiss", key=f"dismiss_notif_mentee_{unm['id']}", use_container_width=True):
+                                if api_mark_match_notified(unm['id']):
+                                    st.session_state['profile'] = None
+                                    st.rerun()
+        
+        tab_setup, tab_match, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
+        
+        with tab_setup:
+            st.subheader("Profile Details")
+            if st.session_state.get('profile_save_success'):
+                st.success(st.session_state.pop('profile_save_success'))
+            with st.form("edit_profile_form"):
+
+                # ── Section 1: My Profile ──────────────────────────────────
+                with st.expander("👤 My Profile", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        name = st.text_input("Display Name", value=mentee['name'])
+                    with col2:
+                        country = st.selectbox("Country", COUNTRIES, index=COUNTRIES.index(mentee['country']) if mentee['country'] in COUNTRIES else 0)
+
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        raw_years = mentee['years_code_pro'] or 1.0
+                        safe_years = min(float(raw_years), 50.0)
+                        years = st.number_input("Years of Professional Experience", min_value=0.0, max_value=50.0, value=safe_years, step=0.5, format="%g")
+                        st.caption("Use decimals for part-years: e.g. 1.5 = 1 year & 6 months, 0.5 = 6 months.")
+                    with col4:
+                        ed_level = st.selectbox("Education Level", ED_LEVELS, index=ED_LEVELS.index(mentee['ed_level']) if mentee['ed_level'] in ED_LEVELS else 0)
+
+                    col5, col6 = st.columns(2)
+                    with col5:
+                        org_size = st.selectbox("Organization Size", ORG_SIZES, index=ORG_SIZES.index(mentee['org_size']) if mentee['org_size'] in ORG_SIZES else 0)
+                    with col6:
+                        gender = st.selectbox("Gender (Voluntary)", ["Not stated", "Female", "Male", "Non-binary"], index=["Not stated", "Female", "Male", "Non-binary"].index(mentee.get('gender') or "Not stated"))
+                        st.caption("Sharing your gender (optionally) helps us connect you with senior women in tech as role models via our representation-aware matching. This is never required and has no negative effect if left as 'Not stated'.")
+
+                    # Roles
+                    current_roles = [r.strip() for r in mentee['dev_type'].split(";")] if mentee['dev_type'] else []
+                    valid_current_roles = [r for r in current_roles if r in ALL_ROLES]
+                    picked_roles = st.multiselect("Role(s)", ALL_ROLES, default=valid_current_roles if valid_current_roles else [ALL_ROLES[0]])
+                    st.caption("Select all roles that describe your current or target career path.")
+                    custom_roles = st.text_input("Additional roles not listed above (semicolon-separated)", key="custom_roles_mentee", placeholder="e.g. ML Engineer; Data Analyst")
+
+                    # Job Priorities
+                    current_factors = [f.strip() for f in mentee['job_factors'].split(";")] if mentee['job_factors'] else []
+                    valid_current_factors = [f for f in current_factors if f in ALL_FACTORS]
+                    picked_factors = st.multiselect("Job Priorities", ALL_FACTORS, default=valid_current_factors if valid_current_factors else [ALL_FACTORS[0]])
+                    st.caption("What matters most to you in your career right now? Influences your platform match scoring.")
+
+                    col7, col8 = st.columns(2)
+                    with col7:
+                        linkedin_link = st.text_input("LinkedIn Profile URL", value=mentee.get('linkedin_link') or "", placeholder="https://linkedin.com/in/yourprofile")
+                    with col8:
+                        alternative_emails = st.text_input("Additional Contact Emails", value=mentee.get('alternative_emails') or "", placeholder="e.g. personal@email.com; uni@edu.org")
+                        st.caption("Other emails mentors or the platform can use to reach you.")
+
+                    # Timezone
+                    current_tz = mentee.get('timezone') or "Europe/London"
+                    tz_idx = TIMEZONE_OPTIONS.index(current_tz) if current_tz in TIMEZONE_OPTIONS else 0
+                    timezone = st.selectbox("Your Timezone", TIMEZONE_OPTIONS, index=tz_idx)
+                    st.caption("Used to convert mentor availability slots into your local time.")
+
+                    additional_details = st.text_area("Bio / Goals / Specific Interests", value=mentee.get('additional_details') or "", placeholder="e.g. I am a junior backend developer looking to grow in cloud architecture and distributed systems...")
+                    st.caption("This context helps the AI coach and your matched mentor understand your background.")
+
+                    prefer_diversity_ally = st.checkbox(
+                        "Prefer a mentor who is an active Diversity & Inclusion Ally",
+                        value=bool(mentee.get('prefer_diversity_ally', False)),
+                        help="Filters matches to mentors who have self-identified as committed to gender equality and inclusive workplaces."
+                    )
+
+                # ── Section 2: Mentor Search Preferences ──────────────────
+                with st.expander("🎯 Mentor Search Preferences", expanded=True):
+                    st.caption("These preferences drive both your **platform match ranking** and the **Outreach Hub** external directory search.")
+
+                    target_mentor_expertise = st.text_input(
+                        "Preferred Mentor Expertise Keywords",
+                        value=mentee.get('target_mentor_expertise') or "",
+                        placeholder="e.g. FastAPI, DevOps, Cloud Architecture, Finance"
+                    )
+                    st.caption("Comma-separated keywords describing the skills and domain you want your mentor to have.")
+
+                    col9, col10 = st.columns(2)
+                    with col9:
+                        pref_country = mentee.get('target_mentor_country')
+                        target_mentor_country = st.selectbox(
+                            "Preferred Mentor Country",
+                            ["Any"] + COUNTRIES,
+                            index=0 if not pref_country or pref_country == "Any" else (COUNTRIES.index(pref_country) + 1 if pref_country in COUNTRIES else 0)
+                        )
+                    with col10:
+                        target_mentor_min_years = st.number_input(
+                            "Minimum Mentor Experience (Years)",
+                            min_value=0.0, max_value=50.0,
+                            value=float(mentee.get('target_mentor_min_years') or 5.0),
+                            step=0.5,
+                            format="%g"
+                        )
+                    st.caption("Mentors below this threshold will score lower. Use 0.5 for 6 months, 1.5 for 1.5 years, etc.")
+
+                # ── CV Upload (bottom of form) ─────────────────────────────
+                st.markdown("---")
+                st.markdown("**📄 CV Upload**")
+                cv_file = st.file_uploader("Upload your CV (PDF format)", type=["pdf"], key="mentee_cv_upload")
+                if mentee.get('cv_path'):
+                    with st.expander("📄 View My Current Uploaded CV"):
+                        pdf_bytes = api_get_cv(mentee['id'])
+                        if pdf_bytes:
+                            display_pdf_inline(pdf_bytes)
+                        else:
+                            st.warning("Failed to retrieve CV from server.")
+
+                # ── Save Button ────────────────────────────────────────────
+                save = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                if save:
+                    combined_roles = picked_roles.copy()
+                    if custom_roles.strip():
+                        for r in custom_roles.split(";"):
+                            r_clean = r.strip()
+                            if r_clean and r_clean not in combined_roles:
+                                combined_roles.append(r_clean)
+
+                    updated_data = {
+                        "name": name,
+                        "country": country,
+                        "ed_level": ed_level,
+                        "dev_type": ";".join(combined_roles),
+                        "years_code_pro": years,
+                        "job_factors": ";".join(picked_factors),
+                        "org_size": org_size,
+                        "additional_details": additional_details,
+                        "gender": gender if gender != "Not stated" else None,
+                        "target_mentor_expertise": target_mentor_expertise.strip(),
+                        "target_mentor_country": target_mentor_country if target_mentor_country != "Any" else None,
+                        "target_mentor_min_years": target_mentor_min_years,
+                        "alternative_emails": alternative_emails.strip(),
+                        "prefer_diversity_ally": prefer_diversity_ally,
+                        "timezone": timezone,
+                        "linkedin_link": linkedin_link.strip() if linkedin_link else None
+                    }
+                    success, msg = api_update_profile(updated_data)
+                    if success:
+                        if cv_file is not None:
+                            api_upload_cv(cv_file.getvalue(), cv_file.name)
+                        st.session_state['profile'] = None
+                        st.session_state['profile_save_success'] = msg
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            st.markdown("---")
+            with st.expander("🔐 Account Security & Double Authentication", expanded=False):
+                st.markdown("##### Double Authentication (2FA)")
+                st.caption("Protect your account with an extra verification layer requiring a 6-digit code at sign-in.")
+                user_info = profile.get('user', {}) if profile else {}
+                curr_2fa = user_info.get('two_factor_enabled', True)
+                col_2fa_status, col_2fa_act = st.columns([3, 1.2])
+                with col_2fa_status:
+                    st.write(f"Current Status: **{'🟢 Enabled (Active Protection)' if curr_2fa else '⚪ Disabled'}**")
+                with col_2fa_act:
+                    target_state = not curr_2fa
+                    toggle_btn_text = "Disable 2FA" if curr_2fa else "Enable 2FA"
+                    if st.button(toggle_btn_text, key="toggle_2fa_btn_mentee", use_container_width=True):
+                        t_ok, t_msg = api_toggle_2fa(target_state)
+                        if t_ok:
+                            st.success(t_msg)
+                            st.rerun()
+                        else:
+                            st.error(t_msg)
+
+        if True:
+            
+            with tab_match:
+                st.subheader("Dynamic Matches Recommendation")
+                # ── Equity transparency banner ─────────────────────────────
+                if mentee.get('gender') == 'Female':
+                    st.info(
+                        "🌟 **Equity-Adjusted Results**: As an early-career woman in tech, your match results "
+                        "prioritise senior female role models and Diversity & Inclusion Allies where available. "
+                        "This is part of our commitment to equitable mentorship aligned with SDG 5 — Gender Equality."
+                    )
+                elif mentee.get('prefer_diversity_ally'):
+                    st.info("🤝 **Ally-Boosted Results**: Your preference for a Diversity & Inclusion Ally mentor is active — matching results reflect this.")
+                if st.button("🚀 Search Active Mentor Pool"):
+                    with st.spinner("Calculating match coefficients..."):
+                        matches = api_get_matches()
+                        if not matches:
+                            st.info("No mentors match your profile currently, or the pool is empty.")
+                        else:
+                            st.session_state['current_matches'] = sorted(matches, key=lambda m: m.get('total_score', 0), reverse=True)
+                
+                if 'current_matches' in st.session_state and st.session_state['current_matches']:
+                    matches = st.session_state['current_matches']
+                    
+                    display_list = []
+                    for m in matches:
+                        raw_score = m['total_score']
+                        pct_score = int(round(raw_score * 100)) if isinstance(raw_score, float) and raw_score <= 1.0 else int(round(raw_score))
+                        display_list.append({
+                            'Mentor ID': m['mentor_id'],
+                            'Mentor Name': m['mentor_name'] or f"Mentor #{m['mentor_id']}",
+                            'Mentor Role(s)': m['mentor_devtype'],
+                            'Experience (yrs)': m['mentor_years'],
+                            'Country': m['mentor_country'],
+                            'Score': f"{pct_score}%",
+                            'Confidence': m['match_quality'],
+                            'Status': m['status']
+                        })
+                    
+                    df_matches = pd.DataFrame(display_list)
+                    
+                    def highlight_quality(val):
+                        colors = {'Strong': '#c6e6c6', 'Good': '#f5e6a8', 'Fair': '#f5c99b', 'Weak': '#f0b3b3'}
+                        return f'background-color: {colors.get(val, "white")}'
+                        
+                    styler = df_matches.style
+                    if hasattr(styler, 'map'):
+                        styler = styler.map(highlight_quality, subset=['Confidence'])
+                    else:
+                        styler = styler.applymap(highlight_quality, subset=['Confidence'])
+                        
+                    st.dataframe(
+                        styler,
+                        use_container_width=True
+                    )
+                    
+                    st.subheader("Accept or Decline Proposals")
+                    for m in matches:
+                        if m['status'] == 'PROPOSED':
+                            cols = st.columns([3, 1, 1])
+                            raw_s = m['total_score']
+                            pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
+                            cols[0].write(f"**{m['mentor_name']}** ({m['mentor_devtype']} | {m['mentor_years']} yrs exp) — **Score: {pct_s}%** ({m['match_quality']})") 
+                            
+                            with st.expander(f"👤 View {m['mentor_name']}'s Profile Details"):
+                                display_profile_card(
+                                    name=m['mentor_name'],
+                                    country=m['mentor_country'],
+                                    ed_level=m.get('mentor_ed_level'),
+                                    roles=m['mentor_devtype'],
+                                    years=m['mentor_years'],
+                                    org_size=m['mentor_org_size'],
+                                    priorities=m.get('mentor_job_factors'),
+                                    additional_details=m.get('mentor_additional_details'),
+                                    user_id=m['mentor_id'],
+                                    linkedin_link=m.get('mentor_linkedin_link')
+                                )
+                                if m.get('is_representation_boosted'):
+                                    st.success("🌟 **Representation Alignment**: Pair offers mentorship from a senior female leader in technical fields.")
+                                if m.get('is_ally_boosted'):
+                                    st.success("🤝 **Diversity Ally Match**: This mentor is an active Diversity & Inclusion Ally, committed to supporting gender equality.")
+                                    
+                            if m.get('mentor_cv_path'):
+                                with st.expander(f"📄 Read {m['mentor_name']}'s CV"):
+                                    pdf_bytes = api_get_cv(m['mentor_id'])
+                                    if pdf_bytes:
+                                        display_pdf_inline(pdf_bytes)
+                                    else:
+                                        st.info("CV details unavailable.")
+                            if cols[1].button("✅ Accept", key=f"accept_{m['id']}"):
+                                if api_match_action(m['id'], "ACCEPT"):
+                                    st.success(f"You accepted the match with {m['mentor_name']}!")
+                                    if 'current_matches' in st.session_state:
+                                        del st.session_state['current_matches']
+                                    st.rerun()
+                            if cols[2].button("❌ Decline", key=f"decline_{m['id']}"):
+                                if api_match_action(m['id'], "DECLINE"):
+                                    st.warning(f"You declined the match with {m['mentor_name']}.")
+                                    if 'current_matches' in st.session_state:
+                                        del st.session_state['current_matches']
+                                    st.rerun()
+                                    
+                    st.subheader("Score Breakdown — Top Match")
+                    top = matches[0]
+                    if top.get('is_representation_boosted'):
+                        st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
+                    if top.get('is_ally_boosted'):
+                        st.info("🤝 **Diversity Ally Boost Applied (+10%)**: Mentee requested and was matched with an active Diversity & Inclusion Ally.")
+                    breakdown = pd.DataFrame({
+                        'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
+                                      'Goals alignment (15%)', 'Practical fit (10%)'],
+                        'Score': [top['role_score'], top['experience_score'], top['career_stage_score'],
+                                  top['goals_score'], top['practical_score']]
+                    })
+                    st.bar_chart(breakdown.set_index('Criterion'))
+            
+            with tab_history:
+                import urllib.parse as _up_hist
+
+                st.subheader("My Match History")
+                st.caption("A complete log of every mentor the platform has matched you with, along with their current connection status.")
+
+                history = api_get_match_history()
+
+                if not history:
+                    st.info("You haven't received any matches yet. Head to the **Platform Matches** tab to find your first mentor!")
+                else:
+                    # ── 1. Metric bar ─────────────────────────────────────────
+                    total_h    = len(history)
+                    connected  = sum(1 for h in history if h['status'] == 'ACCEPTED')
+                    pending_h  = sum(1 for h in history if h['status'] == 'PENDING')
+                    declined_h = sum(1 for h in history if h['status'] == 'DECLINED')
+                    hm1, hm2, hm3, hm4 = st.columns(4)
+                    hm1.metric("📋 Total Matches", total_h)
+                    hm2.metric("✅ Connected", connected)
+                    hm3.metric("⏳ Pending", pending_h)
+                    hm4.metric("❌ Declined", declined_h)
+                    st.markdown("---")
+
+                    # ── 3. Filter & sort controls ──────────────────────────────
+                    f_col1, f_col2 = st.columns([2, 1])
+                    with f_col1:
+                        status_filter = st.selectbox(
+                            "Filter by Status",
+                            ["All", "✅ Connected (ACCEPTED)", "⏳ Pending (PENDING)", "❌ Declined (DECLINED)"],
+                            key="hist_status_filter"
+                        )
+                    with f_col2:
+                        sort_by = st.selectbox(
+                            "Sort by",
+                            ["📅 Date (Newest First)", "🏆 Match Score (Highest First)", "📅 Date (Oldest First)"],
+                            key="hist_sort_by"
+                        )
+
+                    # Apply filter
+                    status_map = {
+                        "All": None,
+                        "✅ Connected (ACCEPTED)": "ACCEPTED",
+                        "⏳ Pending (PENDING)": "PENDING",
+                        "❌ Declined (DECLINED)": "DECLINED"
+                    }
+                    active_filter = status_map[status_filter]
+                    filtered = [h for h in history if active_filter is None or h['status'] == active_filter]
+
+                    # Apply sort
+                    if "Score" in sort_by:
+                        filtered = sorted(filtered, key=lambda x: x.get('total_score', 0), reverse=True)
+                    elif "Oldest" in sort_by:
+                        filtered = sorted(filtered, key=lambda x: x.get('created_at', ''))
+                    else:
+                        filtered = sorted(filtered, key=lambda x: x.get('created_at', ''), reverse=True)
+
+                    if not filtered:
+                        st.info("No matches found for the selected filter.")
+                    else:
+                        st.caption(f"Showing {len(filtered)} of {total_h} matches.")
+
+                    # ── 2. Card per match ──────────────────────────────────────
+                    for h in filtered:
+                        score = h.get('total_score', 0)
+                        # Normalise: DB stores as 0.0–1.0 float
+                        if isinstance(score, float) and score <= 1.0:
+                            score = int(round(score * 100))
+                        else:
+                            score = int(round(score))
+                        quality = h.get('match_quality', '')
+                        status = h['status']
+
+                        # Score badge colours
+                        if score >= 80:
+                            sc_color = "#1e7e34"
+                        elif score >= 50:
+                            sc_color = "#856404"
+                        else:
+                            sc_color = "#721c24"
+
+                        # Status badge
+                        if status == 'ACCEPTED':
+                            status_badge = "✅ Connected"
+                            status_color = "#155724"
+                            status_bg = "#d4edda"
+                        elif status == 'DECLINED':
+                            status_badge = "❌ Declined"
+                            status_color = "#721c24"
+                            status_bg = "#f8d7da"
+                        else:
+                            status_badge = "⏳ Pending"
+                            status_color = "#856404"
+                            status_bg = "#fff3cd"
+
+                        date_str = h['created_at'].split("T")[0] if 'T' in h['created_at'] else h['created_at']
+
+                        with st.container(border=True):
+                            top_l, top_r = st.columns([3, 1])
+                            with top_l:
+                                st.markdown(f"##### {h['mentor_name']}")
+                                roles_display = (h.get('mentor_devtype') or '').replace(';', ' · ')
+                                st.caption(f"📍 {h.get('mentor_country', '')}  ·  {roles_display}")
+                                st.markdown(
+                                    f"<span style='background:{status_bg}; color:{status_color}; "
+                                    f"padding:3px 10px; border-radius:12px; font-size:0.8rem; font-weight:600;'>"
+                                    f"{status_badge}</span>"
+                                    f"  <span style='color:#6c757d; font-size:0.8rem;'>· Matched {date_str}</span>",
+                                    unsafe_allow_html=True
+                                )
+                            with top_r:
+                                st.markdown(
+                                    f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                    f"<span style='color:{sc_color}; font-size:1rem; font-weight:700;'>{score}%</span><br/>"
+                                    f"<span style='font-size:0.7rem; color:#6c757d;'>{quality or 'Match Score'}</span></div>",
+                                    unsafe_allow_html=True
+                                )
+
+                            # Connected mentor — show full action expanders
+                            if status == 'ACCEPTED':
+                                contact_parts = []
+                                if h.get('mentor_email'):
+                                    contact_parts.append(f"📧 `{h['mentor_email']}`")
+                                if h.get('mentor_contact_link'):
+                                    contact_parts.append(f"[📅 Scheduling Link]({h['mentor_contact_link']})")
+                                if contact_parts:
+                                    st.markdown("  ·  ".join(contact_parts))
+                                if h.get('is_representation_boosted'):
+                                    st.success("🌟 **Representation Alignment**: Pair offers mentorship from a senior female leader in technical fields.")
+                                if h.get('is_ally_boosted'):
+                                    st.success("🤝 **Diversity Ally Match**: This mentor is an active Diversity & Inclusion Ally.")
+
+                                with st.expander(f"👤 View {h['mentor_name']}'s Profile"):
+                                    display_profile_card(
+                                        name=h['mentor_name'],
+                                        country=h.get('mentor_country'),
+                                        ed_level=h.get('mentor_ed_level'),
+                                        roles=h.get('conn_devtype') or h.get('mentor_devtype'),
+                                        years=h.get('mentor_years'),
+                                        org_size=h.get('mentor_org_size'),
+                                        priorities=h.get('mentor_job_factors'),
+                                        additional_details=h.get('mentor_additional_details'),
+                                        user_id=h.get('mentor_id'),
+                                        email=h.get('mentor_email'),
+                                        contact_link=h.get('mentor_contact_link'),
+                                        linkedin_link=h.get('mentor_linkedin_link')
+                                    )
+
+                                if h.get('mentor_cv_path'):
+                                    with st.expander(f"📄 Read {h['mentor_name']}'s CV"):
+                                        pdf_bytes = api_get_cv(h['mentor_id'])
+                                        if pdf_bytes:
+                                            display_pdf_inline(pdf_bytes)
+
+                                with st.expander(f"📅 Schedule First Meeting with {h['mentor_name']}"):
+                                    st.write("Generate a calendar invitation draft to schedule your first 25-minute introductory sync.")
+                                    if h.get('availability_note'):
+                                        display_mentor_availability(h['availability_note'], profile, h)
+                                    title_val = f"Mentor Me Intro Sync: {mentee['name']} & {h['mentor_name']}"
+                                    sel_slot = st.session_state.get('selected_scheduled_slot')
+                                    date_time_line = f"Date/Time: {sel_slot}\n" if (sel_slot and sel_slot != "None of these work / Coordinate Custom Time") else "Date/Time: To be coordinated\n"
+                                    calendar_body = (
+                                        f"Title: {title_val}\n"
+                                        f"{date_time_line}"
+                                        f"Duration: 25 minutes\n\n"
+                                        f"Proposed Intro Sync Agenda:\n"
+                                        f"1. Icebreaker & Introductions (5 mins)\n"
+                                        f"   - Share briefly about our career journeys, tech stacks, and current roles.\n"
+                                        f"2. Partnership Goals & Expectations (10 mins)\n"
+                                        f"   - Discuss what we hope to accomplish together and align on mentoring scope.\n"
+                                        f"3. Cadence & Communication Preferences (5 mins)\n"
+                                        f"   - Align on meeting frequency (e.g., bi-weekly or monthly) and default messaging channels.\n"
+                                        f"4. Action Items & Next Steps (5 mins)\n"
+                                        f"   - Align on preparation for our first deep-dive discussion (Module 1: Career Progression).\n\n"
+                                        f"Looking forward to connecting!"
+                                    )
+                                    st.markdown("**Copy / Edit Calendar Event Details:**")
+                                    st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{h['id']}_{sel_slot}", label_visibility="collapsed")
+                                    st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
+                                    coordinate_subject = "Scheduling: Mentor Me Intro Call"
+                                    coordinate_body = (
+                                        f"Hi {h['mentor_name']},\n\n"
+                                        f"I am excited to connect with you as my mentor on Mentor Me!\n\n"
+                                        f"Please let me know a few days and times that work best for our introductory 25-minute call, "
+                                        f"or feel free to send your calendar scheduling link if you have one. Once we select a slot, "
+                                        f"I will send over a calendar invite.\n\n"
+                                        f"Best regards,\n{mentee['name']}"
+                                    )
+                                    mailto_coord_url = f"mailto:{h['mentor_email']}?subject={_up_hist.quote(coordinate_subject)}&body={_up_hist.quote(coordinate_body)}"
+                                    
+                                    # Google Calendar and ICS Calendar generators
+                                    gcal_url = generate_google_calendar_url(
+                                        title=title_val,
+                                        description=calendar_body,
+                                        location="Virtual (Mentor Me Platform)",
+                                        start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                        end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                                    )
+                                    ics_bytes = generate_ics_calendar_file(
+                                        title=title_val,
+                                        description=calendar_body,
+                                        location="Virtual (Mentor Me Platform)",
+                                        start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                        end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                                    )
+                                    
+                                    cal_btn1, cal_btn2, cal_btn3 = st.columns(3)
+                                    with cal_btn1:
+                                        st.markdown(
+                                            f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;">'
+                                            f'<button style="background-color:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
+                                            f'✉️ Email Mentor</button></a>',
+                                            unsafe_allow_html=True
+                                        )
+                                    with cal_btn2:
+                                        st.link_button("📅 Add to Google Calendar", gcal_url, use_container_width=True)
+                                    with cal_btn3:
+                                        st.download_button(
+                                            "📥 Download .ICS Invite",
+                                            data=ics_bytes,
+                                            file_name=f"mentor_me_sync_{h['mentor_name'].replace(' ', '_')}.ics",
+                                            mime="text/calendar",
+                                            use_container_width=True,
+                                            key=f"download_ics_mentee_{h['id']}"
+                                        )
+
+                                # ── In-App Direct Chat ─────────────────────────────
+                                with st.expander(f"💬 In-App Direct Chat with {h['mentor_name']}", expanded=True):
+                                    display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mentee_hist_{h['id']}")
+
+                                # ── Goal Tracker ──────────────────────────────────
+                                with st.expander(f"📓 Mentorship Journal & Goals — {h['mentor_name']}"):
+                                    st.caption("Set your mentorship goals, log sessions, and track your progress throughout the partnership.")
+                                    jkey = f"journal_{h['id']}"
+                                    if jkey not in st.session_state:
+                                        st.session_state[jkey] = {"goals": ["", "", ""], "sessions": [], "reflections": ""}
+                                    j = st.session_state[jkey]
+
+                                    st.markdown("**🎯 My Mentorship Goals**")
+                                    j["goals"][0] = st.text_input("Goal 1", value=j["goals"][0], key=f"g0_{h['id']}", placeholder="e.g. Get promoted to senior engineer within 12 months")
+                                    j["goals"][1] = st.text_input("Goal 2", value=j["goals"][1], key=f"g1_{h['id']}", placeholder="e.g. Build confidence presenting to stakeholders")
+                                    j["goals"][2] = st.text_input("Goal 3", value=j["goals"][2], key=f"g2_{h['id']}", placeholder="e.g. Expand my professional network in cloud engineering")
+
+                                    st.markdown("---")
+                                    st.markdown("**📋 Session Log**")
+                                    if j["sessions"]:
+                                        for si, sess in enumerate(j["sessions"]):
+                                            sc1, sc2, sc3, sc4 = st.columns([2, 2, 3, 1])
+                                            sc1.markdown(f"`{sess.get('date','')}`")
+                                            sc2.markdown(sess.get('topic',''))
+                                            sc3.markdown(sess.get('notes',''))
+                                            sc4.markdown(f"*{sess.get('status','')}*")
+
+                                    st.markdown("*Log a new session:*")
+                                    ls1, ls2 = st.columns(2)
+                                    new_s_date = ls1.date_input("Session Date", key=f"sd_{h['id']}")
+                                    new_s_status = ls2.selectbox("Status", ["Planned", "Completed", "Cancelled"], key=f"ss_{h['id']}")
+                                    new_s_topic = st.text_input("Topic / Agenda", key=f"st_{h['id']}", placeholder="e.g. Career roadmap, code review, negotiation prep")
+                                    new_s_notes = st.text_input("Key Takeaways", key=f"sn_{h['id']}", placeholder="e.g. Follow up on resume draft, research cloud cert paths")
+                                    if st.button("➕ Add Session", key=f"add_sess_{h['id']}"):
+                                        j["sessions"].append({"date": str(new_s_date), "topic": new_s_topic, "notes": new_s_notes, "status": new_s_status})
+                                        st.success("Session logged!")
+                                        st.rerun()
+
+                                    st.markdown("---")
+                                    st.markdown("**💭 Reflections & Notes**")
+                                    j["reflections"] = st.text_area("Personal reflections on this mentorship", value=j["reflections"], key=f"refl_{h['id']}", height=100, placeholder="What has been most valuable? What challenges have you faced?")
+
+                                # ── Feedback & Rating ──────────────────────────────────
+                                with st.expander(f"⭐ Rate This Mentorship — {h['mentor_name']}"):
+                                    st.caption("Your feedback helps improve the matching experience for future early-career women on the platform.")
+                                    fkey = f"feedback_{h['id']}"
+                                    if fkey not in st.session_state:
+                                        st.session_state[fkey] = {"rating": 3, "comment": "", "recommend": False, "submitted": False}
+                                    fb = st.session_state[fkey]
+                                    if fb["submitted"]:
+                                        st.success(f"✅ Thank you! You rated this mentorship **{fb['rating']}/5 stars**. Your feedback has been recorded.")
+                                    else:
+                                        fb["rating"] = st.select_slider("Overall rating", options=[1, 2, 3, 4, 5], value=fb["rating"], format_func=lambda x: f"{x} {'⭐'*x}", key=f"fb_rating_{h['id']}")
+                                        fb["comment"] = st.text_area("What was most valuable about this mentorship?", value=fb["comment"], key=f"fb_comment_{h['id']}", height=80, placeholder="e.g. My mentor helped me prepare for a promotion conversation and build my confidence...")
+                                        fb["recommend"] = st.checkbox("I would recommend this mentor to other early-career women in tech", value=fb["recommend"], key=f"fb_rec_{h['id']}")
+                                        if st.button("📤 Submit Feedback", key=f"fb_submit_{h['id']}"):
+                                            fb["submitted"] = True
+                                            st.success("Thank you for your feedback!")
+                                            st.rerun()
+
+                    # ── 4. Cross-tab callout ───────────────────────────────────
+                    st.markdown("---")
+                    noms_check = api_get_nominations()
+                    pending_ext = sum(1 for n in noms_check if n['status'] != 'ACCEPTED') if noms_check else 0
+                    if pending_ext > 0:
+                        st.info(f"📩 You also have **{pending_ext} pending external invitation(s)** to mentors you personally reached out to. Track them in the **External Invitations** tab.")
+                    elif noms_check:
+                        st.info(f"✅ All **{len(noms_check)} external mentor invitation(s)** you sent have been accepted. View them in the **External Invitations** tab.")
+                    else:
+                        st.info("💡 You can also personally invite external mentors from GitHub, LinkedIn, ORCID, or your network via the **Outreach Hub** tab.")
+
+            
+            with tab_outreach:
+                import urllib.parse as _up
+
+                st.subheader("🌐 External Mentors Outreach Hub")
+                st.caption("Can't find the right mentor in the platform pool? Search live professional directories or nominate someone you already know.")
+
+                # ════════════════════════════════════════════════════════════
+                # SECTION A — Discover via Live Directories
+                # ════════════════════════════════════════════════════════════
+                st.markdown("### 🌐 Discover via Live Directories")
+                st.caption("Search GitHub, LinkedIn, or ORCID in real time. Results are automatically scored against your mentor preferences.")
+
+                # Directory source picker
+                search_source = st.radio(
+                    "Directory:",
+                    [
+                        "🐱 GitHub (Tech & Open Source Developers)",
+                        "🌐 LinkedIn (Direct Deep Link Generator & Search)",
+                        "💼 ORCID (Research & Academic Experts)"
+                    ],
+                    horizontal=True,
+                    key="outreach_search_source_radio"
+                )
+
+                st.info("💡 **How Matching Works**: The search filters fetch relevant candidates from the selected directory. The **Compatibility Match %** is then calculated by comparing their profile records directly against your desired **Target Mentor Preferences** (preferred skills/expertise, country, and minimum experience years) to ensure personalized compatibility.")
+
+                # Pull saved preferences as defaults
+                saved_query   = mentee.get('target_mentor_expertise') or ""
+                saved_country = mentee.get('target_mentor_country') or ""
+                saved_years   = mentee.get('target_mentor_min_years') or 0.0
+
+                if not saved_query.strip():
+                    st.warning("⚠️ **No preferences set**: Please specify your **Preferred Mentor Expertise Keywords** in the **Profile Setup** tab first. You can also enter a temporary query below.")
+
+                # ── Improvement 1: Session-only search query override ────────
+                with st.expander("⚙️ Customize This Search (optional — does not change your saved profile)", expanded=not saved_query.strip()):
+                    st.caption("Pre-filled from your saved Profile Setup preferences. Adjust freely — changes here only affect this search session.")
+                    ov_col1, ov_col2, ov_col3 = st.columns([3, 2, 1])
+                    with ov_col1:
+                        session_query = st.text_input(
+                            "Expertise Keywords",
+                            value=saved_query,
+                            placeholder="e.g. Python, DevOps, Finance",
+                            key="outreach_session_query"
+                        )
+                    with ov_col2:
+                        session_country_opts = ["Any"] + COUNTRIES
+                        session_country_default = saved_country if saved_country and saved_country != "Any" else "Any"
+                        session_country_idx = session_country_opts.index(session_country_default) if session_country_default in session_country_opts else 0
+                        session_country = st.selectbox("Preferred Country", session_country_opts, index=session_country_idx, key="outreach_session_country")
+                    with ov_col3:
+                        session_min_years = st.number_input("Min. Yrs Exp.", min_value=0.0, max_value=50.0, value=float(saved_years), step=0.5, format="%g", key="outreach_session_years")
+
+                # Resolve active search params (session override wins)
+                active_query   = st.session_state.get("outreach_session_query", saved_query).strip()
+                active_country_raw = st.session_state.get("outreach_session_country", session_country_default if saved_query.strip() else "Any")
+                active_country = active_country_raw if active_country_raw != "Any" else None
+                country_lbl    = active_country if active_country else "Any Country"
+                
+                if "GitHub" in search_source:
+                    source_short = "GitHub"
+                elif "LinkedIn" in search_source:
+                    source_short = "LinkedIn"
+                else:
+                    source_short = "ORCID"
+
+                # ════════════════════════════════════════════════════════════
+                # DIRECT LINKEDIN DEEP LINK GENERATOR SUITE
+                # ════════════════════════════════════════════════════════════
+                if source_short == "LinkedIn":
+                    with st.container(border=True):
+                        st.markdown("### 🔗 Direct LinkedIn Deep Link Generator")
+                        st.markdown(
+                            """
+                            **What is the Direct LinkedIn Deep Link Generator?**  
+                            A **LinkedIn Deep Link** is a dynamically constructed URL that opens LinkedIn’s official search engine with pre-filled, Boolean-optimized filters based on your exact mentee profile and goals (*Target Role, Country, Skills, Seniority, and Mentorship keywords*).
+                            
+                            > ⚡ **Why use Deep Links?** Instead of relying on a third-party search API that can get deprecated, rate-limited, or blocked, your app generates a smart one-click link that takes you directly to live, matching mentor candidates on LinkedIn's global network of 1B+ professionals.
+                            """
+                        )
+                        
+                        st.markdown("##### ⚙️ Fine-Tune Your Deep Link Search Filters")
+                        dl_col1, dl_col2 = st.columns(2)
+                        with dl_col1:
+                            dl_role = st.text_input("Target Role / Discipline", value=active_query or "Software Engineering", key="dl_role_input")
+                            dl_skills_str = st.text_input("Key Skills / Technologies (comma separated)", value=mentee.get('additional_details') or "Python, Cloud, System Architecture", key="dl_skills_input")
+                            dl_seniority = st.selectbox(
+                                "Target Seniority Level",
+                                ["Any", "Senior", "Lead", "Principal", "Director", "VP", "Head of"],
+                                index=1,
+                                key="dl_seniority_select"
+                            )
+                        with dl_col2:
+                            dl_country_opts = ["Any"] + COUNTRIES
+                            dl_c_default = active_country if active_country and active_country in dl_country_opts else ("United Kingdom" if "United Kingdom" in dl_country_opts else "Any")
+                            dl_c_idx = dl_country_opts.index(dl_c_default) if dl_c_default in dl_country_opts else 0
+                            dl_country = st.selectbox("Location / Country", dl_country_opts, index=dl_c_idx, key="dl_country_select")
+                            dl_c_val = dl_country if dl_country != "Any" else None
+                            
+                            dl_wit_default = (mentee.get('gender') == 'Female' or mentee.get('prefer_diversity_ally'))
+                            dl_women_in_tech = st.checkbox("🌟 Prioritize Women in Tech / Female Leaders (SDG 5)", value=dl_wit_default, key="dl_wit_chk")
+                            dl_mentor_intent = st.checkbox("🎯 Include Mentorship Intent Keywords (mentor / mentoring)", value=True, key="dl_intent_chk")
+                        
+                        # Dynamically construct deep link
+                        dl_skills_list = [s.strip() for s in dl_skills_str.replace(";", ",").split(",") if s.strip()]
+                        dl_result = build_app_linkedin_deep_link(
+                            role=dl_role,
+                            skills=dl_skills_list,
+                            country=dl_c_val,
+                            seniority=dl_seniority if dl_seniority != "Any" else None,
+                            mentorship_intent=dl_mentor_intent,
+                            women_in_tech=dl_women_in_tech
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("##### 🚀 Launch Your Direct LinkedIn Deep Link")
+                        
+                        st.link_button(
+                            "🌐 Launch Live Search on LinkedIn",
+                            dl_result["deep_link_url"],
+                            use_container_width=True,
+                            help="Opens LinkedIn People Search in a new browser tab with your synthesized Boolean filters."
+                        )
+                        
+                        with st.expander("🔍 Inspect Synthesized LinkedIn Boolean Query"):
+                            st.caption("Here is the exact Boolean query formula dynamically built and passed into LinkedIn's search engine:")
+                            st.code(dl_result["raw_query"], language="sql")
+                            st.text_input("Direct Deep Link URL (Click to copy)", value=dl_result["deep_link_url"], key="dl_copyable_url")
+
+                        # LinkedIn Outreach Message Crafter
+                        with st.expander("✉️ LinkedIn Outreach Messages & InMail Crafter", expanded=True):
+                            st.caption("Customise ready-to-send messages for connecting with prospective mentors on LinkedIn:")
+                            msg_mentor_name = st.text_input("Prospective Mentor Name (optional)", value="Alex", key="dl_msg_mname")
+                            
+                            templates = generate_app_linkedin_outreach_templates(
+                                mentee_name=mentee.get('name') or "Mentee",
+                                mentee_role=mentee.get('dev_type') or dl_role or "Software Engineer",
+                                mentor_name=msg_mentor_name,
+                                tech_focus=dl_role or "Engineering Leadership"
+                            )
+                            
+                            # 1. Connection Note (300 chars limit)
+                            cn_note = templates["connection_note"]
+                            cn_len = len(cn_note)
+                            st.markdown(f"**1. LinkedIn Connection Request Note** `({cn_len}/300 characters - LinkedIn Compliant ✅)`")
+                            st.text_area("Personalised Note (Copy to paste in LinkedIn connection request):", value=cn_note, height=80, key="dl_conn_note_area")
+                            
+                            # 2. InMail / Direct Message
+                            st.markdown("**2. Full InMail / Direct Message Template**")
+                            st.text_area("Comprehensive Message (For LinkedIn InMail, In-Platform Messages, or Email):", value=templates["inmail_message"], height=200, key="dl_inmail_area")
+
+                elif active_query:
+                    st.info(f"🎯 **Search Settings**: Searching **{source_short}** for **'{active_query}'** · Location: **{country_lbl}** · Min. experience: **{int(session_min_years)}+ years**")
+                    run_search = st.button(f"🔍 Search Live {source_short} Directory", key="outreach_search_btn", use_container_width=True)
+
+                    if run_search:
+                        with st.spinner(f"Querying live {source_short} directory and scoring candidates..."):
+                            if "GitHub" in search_source:
+                                results = api_search_github(active_query, active_country)
+                            else:
+                                results = api_search_orcid(active_query, active_country)
+                            if results:
+                                st.session_state['outreach_search_results'] = sorted(results, key=lambda r: r.get('match_percentage', 0), reverse=True)
+                                st.session_state['outreach_search_results_source'] = source_short
+                                st.success(f"✅ Found {len(results)} matching profiles!")
+                            else:
+                                st.warning(f"No matches found in {source_short}. Try broadening your keywords or selecting 'Any Country'.")
+
+                # ── Improvement 2: Modernized Candidate Cards ────────────────
+                if 'outreach_search_results' in st.session_state and st.session_state['outreach_search_results']:
+                    results_src = st.session_state.get('outreach_search_results_source', 'Directory')
+                    st.markdown(f"#### 📋 {len(st.session_state['outreach_search_results'])} Candidates Found · Source: {results_src}")
+
+                    for idx, candidate in enumerate(st.session_state['outreach_search_results']):
+                        pct  = candidate['match_percentage']
+                        if pct >= 80:
+                            score_badge = f"🟢 **{pct}% — High Match**"
+                            badge_color = "#1e7e34"
+                        elif pct >= 50:
+                            score_badge = f"🟡 **{pct}% — Moderate Match**"
+                            badge_color = "#856404"
+                        else:
+                            score_badge = f"🔴 **{pct}% — Low Match**"
+                            badge_color = "#721c24"
+
+                        with st.container(border=True):
+                            head_col, score_col = st.columns([3, 1])
+                            with head_col:
+                                st.markdown(f"##### {candidate['name']}")
+                                st.caption(f"📍 {candidate['country']}  ·  {candidate['tech_focus']}")
+                            with score_col:
+                                st.markdown(
+                                    f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                    f"<span style='color:{badge_color}; font-size:0.9rem; font-weight:700;'>{pct}%</span><br/>"
+                                    f"<span style='font-size:0.72rem; color:#6c757d;'>Compatibility</span></div>",
+                                    unsafe_allow_html=True
+                                )
+
+                            # Link badges row
+                            link_badges = []
+                            link_badges.append(f"[🔗 {results_src} Profile]({candidate['contact']})")
+                            if candidate.get('linkedin_url'):
+                                link_badges.append(f"[🌐 LinkedIn]({candidate['linkedin_url']})")
+                            if candidate.get('other_urls'):
+                                for u_idx, u_val in enumerate(candidate['other_urls'][:2]):
+                                    link_badges.append(f"[🏠 Website {u_idx+1}]({u_val})")
+                            if candidate.get('public_email'):
+                                link_badges.append(f"📧 `{candidate['public_email']}`")
+                            st.markdown("  ·  ".join(link_badges))
+
+                            # Match justifications
+                            with st.expander("📝 View Match Justifications"):
+                                for j in candidate['justifications']:
+                                    st.markdown(f"- {j}")
+
+                            # Action buttons
+                            public_email = candidate.get('public_email')
+                            act_col1, act_col2 = st.columns([1, 1])
+                            with act_col1:
+                                if public_email:
+                                    if st.button("✉️ Generate Invitation", key=f"quick_invite_outreach_{idx}", use_container_width=True):
+                                        ok, res = api_nominate_mentor(candidate['name'], public_email, active_query)
+                                        if ok:
+                                            st.session_state[f'nomination_outreach_{idx}'] = res
+                                            st.rerun()
+                                        else:
+                                            st.error(res)
+                                else:
+                                    st.button("✉️ No Public Email", disabled=True, key=f"no_email_{idx}", use_container_width=True, help="This profile has no publicly listed email. Use the profile link to reach out directly.")
+                            with act_col2:
+                                # Always offer a copyable invite message for profiles without email (LinkedIn/GitHub outreach)
+                                if st.button("📋 Copy Invite Message", key=f"copy_invite_{idx}", use_container_width=True):
+                                    st.session_state[f'show_copy_msg_{idx}'] = not st.session_state.get(f'show_copy_msg_{idx}', False)
+
+                            if st.session_state.get(f'show_copy_msg_{idx}', False):
+                                copy_link = f"{get_app_base_url()}/?invite_code=PENDING"
+                                copy_template = (
+                                    f"Hi {candidate['name']},\n\n"
+                                    f"I came across your profile and was impressed by your expertise in {candidate['tech_focus']}.\n\n"
+                                    f"I am currently seeking mentorship in this area and am using a platform called Mentor Me to manage my learning connections. "
+                                    f"I would be honoured to connect with you. You can use the link below to join the platform and we will be automatically paired:\n\n"
+                                    f"{copy_link}\n\n"
+                                    f"If you prefer not to register on a new platform, feel free to reach out directly and we can coordinate externally.\n\n"
+                                    f"Thank you for your time!\n\nBest regards,\n{mentee['name']}"
+                                )
+                                st.text_area("Copy this message to use on LinkedIn, GitHub, or any channel:", value=copy_template, height=180, key=f"copy_msg_area_{idx}")
+                                st.caption("💡 After nominating them via email, their actual personalised invite link will appear in the **External Invitations** tab.")
+
+                            # Inline email designer (shown after nomination is generated)
+                            if f'nomination_outreach_{idx}' in st.session_state:
+                                nom = st.session_state[f'nomination_outreach_{idx}']
+                                invite_link = f"{get_app_base_url()}/?invite_code={nom['invite_code']}"
+                                with st.expander("✉️ Outreach Email Designer", expanded=True):
+                                    email_template = (
+                                        f"Hi {nom['mentor_name']},\n\n"
+                                        f"I came across your profile and noticed your expertise in {nom['tech_focus']}.\n\n"
+                                        f"I am currently looking for mentorship in this area. I'm using a platform called Mentor Me to manage my learning connections. "
+                                        f"I've created a direct invitation link for you to connect with me:\n\n{invite_link}\n\n"
+                                        f"If you are open to a brief chat or periodic mentoring, signing up via this link will automatically connect us on the platform. "
+                                        f"Alternatively, if you prefer not to register on a new platform, feel free to reply directly to this email so we can connect and coordinate externally instead.\n\n"
+                                        f"Thank you so much for your time!\n\nBest regards,\n{mentee['name']}"
+                                    )
+                                    outreach_message = st.text_area("Edit your invitation message:", value=email_template, height=200, key=f"drafted_outreach_msg_outreach_{idx}")
+                                    inv_subject = "Mentorship Invitation - Mentor Me"
+                                    mailto_url = f"mailto:{nom['mentor_contact']}?subject={_up.quote(inv_subject)}&body={_up.quote(outreach_message)}"
+                                    btn_c1, btn_c2 = st.columns(2)
+                                    with btn_c1:
+                                        st.markdown(
+                                            f'<a href="{mailto_url}" target="_blank" style="text-decoration:none;">'
+                                            f'<button style="background:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%;">'
+                                            f'✉️ Open in Email Client</button></a>',
+                                            unsafe_allow_html=True
+                                        )
+                                    with btn_c2:
+                                        if st.button("✖ Close Designer", key=f"clear_nom_card_outreach_{idx}", use_container_width=True):
+                                            del st.session_state[f'nomination_outreach_{idx}']
+                                            st.rerun()
+                                    st.caption(f"🔗 Invite link: `{invite_link}`")
+
+                    st.markdown("")
+                    if st.button("🗑 Clear Search Results", key="clear_outreach_results_btn"):
+                        del st.session_state['outreach_search_results']
+                        del st.session_state['outreach_search_results_source']
+                        st.rerun()
+
+                # ════════════════════════════════════════════════════════════
+                # SECTION B — Direct Nomination
+                # ════════════════════════════════════════════════════════════
+                st.markdown("---")
+                st.markdown("### ✉️ Direct Nomination")
+                st.caption("Already know who you want as a mentor? Enter their details below to generate a personalised invitation link and draft a message.")
+
+                with st.expander("✉️ Invite a Specific Mentor by Email", expanded=False):
+                    mentee_name_val = mentee.get('name') or user.get('email', 'A Mentee')
+                    default_note_text = (
+                        f"Hi there,\n\n"
+                        f"I came across your profile and would be deeply grateful for the opportunity to connect for periodic mentorship.\n\n"
+                        f"I am using the Mentor Me platform to organise our learning goals and coordinate intro calls. "
+                        f"Please click the invitation link to connect with me.\n\n"
+                        f"Warm regards,\n{mentee_name_val}"
+                    )
+                    
+                    with st.form("nomination_form", clear_on_submit=False):
+                        n_col1, n_col2 = st.columns(2)
+                        with n_col1:
+                            nom_name = st.text_input("Mentor's Name", placeholder="e.g. Dr. Jane Smith")
+                        with n_col2:
+                            nom_contact = st.text_input("Mentor's Email Address", placeholder="e.g. mentor@university.ac.uk")
+                        nom_focus = st.text_input(
+                            "Their Area of Expertise",
+                            placeholder="e.g. Python, Cloud Architecture, Machine Learning",
+                            value=saved_query
+                        )
+                        nom_message = st.text_area(
+                            "📝 Personal Note to Mentor (Included in the Dispatched Email):",
+                            value=default_note_text,
+                            height=150,
+                            help="This personalized note will be delivered directly to the mentor's inbox with your invitation link. If the mentor replies to the email, it will go directly to your personal email."
+                        )
+                        nom_submit = st.form_submit_button("🚀 Send Mentorship Invitation Email", type="primary", use_container_width=True)
+
+                        if nom_submit:
+                            if not nom_name.strip() or not nom_contact.strip() or not nom_focus.strip():
+                                st.error("Please fill in the mentor's name, email, and area of expertise.")
+                            elif "@" not in nom_contact or "." not in nom_contact:
+                                st.error("Please enter a valid email address (e.g. mentor@example.com).")
+                            else:
+                                ok, res = api_nominate_mentor(nom_name.strip(), nom_contact.strip(), nom_focus.strip(), nom_message.strip())
+                                if ok:
+                                    st.session_state['latest_nomination'] = res
+                                    st.success(f"✨ Invitation email successfully dispatched to **{nom_contact.strip()}**! (Reply-To configured to your inbox)")
+                                    st.rerun()
+                                else:
+                                    st.error(res)
+
+                    if 'latest_nomination' in st.session_state:
+                        nom = st.session_state['latest_nomination']
+                        invite_link = f"{get_app_base_url()}/?invite_code={nom['invite_code']}"
+                        st.markdown("---")
+                        st.markdown(f"#### ✉️ Active Invitation Dispatched to {nom['mentor_name']}")
+                        st.info(f"An official invitation containing your personalized note was sent to **{nom['mentor_contact']}** (Reply-To: `{user.get('email')}`). When the mentor registers, your partnership will be automatically connected!")
+                        st.text_input("Direct Invitation Link (Copy to share via LinkedIn or WhatsApp):", value=invite_link, key=f"active_inv_link_{nom['invite_code']}")
+                        if st.button("✖ Clear Notification", key="clear_nom_card_btn", use_container_width=True):
+                            del st.session_state['latest_nomination']
+                            st.rerun()
+
+
+        with tab_nominations:
+            import urllib.parse
+            import datetime as _dt
+
+            st.subheader("My External Invitations")
+            st.caption("Track the registration status of every mentor you have personally invited to Mentor Me.")
+
+            noms = api_get_nominations()
+
+            if not noms:
+                st.info("You haven't invited any external mentors yet. Head to the **Outreach Hub** tab to discover and nominate mentors from GitHub, LinkedIn, or ORCID.")
+            else:
+                # ── Summary metric bar ────────────────────────────────────
+                total = len(noms)
+                accepted = sum(1 for n in noms if n['status'] == "ACCEPTED")
+                pending = total - accepted
+                m1, m2, m3 = st.columns(3)
+                m1.metric("📤 Total Invited", total)
+                m2.metric("🟢 Registered & Connected", accepted)
+                m3.metric("⏳ Awaiting Registration", pending)
+                st.markdown("---")
+
+                # ── One card per nomination ───────────────────────────────
+                for n in noms:
+                    is_accepted = n['status'] == "ACCEPTED"
+                    status_label = "🟢 Registered & Connected" if is_accepted else "⏳ Pending Registration"
+                    p_invite_link = f"{get_app_base_url()}/?invite_code={n['invite_code']}"
+
+                    # Parse dates
+                    try:
+                        created_dt = _dt.datetime.fromisoformat(n['created_at'].replace('Z', '+00:00'))
+                        date_str = created_dt.strftime("%d %b %Y")
+                    except Exception:
+                        date_str = n['created_at']
+
+                    try:
+                        last_contact_raw = n.get('last_contacted_at') or n['created_at']
+                        last_dt = _dt.datetime.fromisoformat(last_contact_raw.replace('Z', '+00:00'))
+                        last_str = last_dt.strftime("%d %b %Y")
+                    except Exception:
+                        last_str = "Unknown"
+
+                    card_label = f"{status_label}  ·  **{n['mentor_name']}**"
+                    with st.expander(card_label, expanded=not is_accepted):
+                        c1, c2 = st.columns([2, 1])
+                        with c1:
+                            st.markdown(f"**Contact:** {n['mentor_contact']}")
+                            st.markdown(f"**Focus / Expertise:** {n['tech_focus']}")
+                            st.markdown(f"**Invited on:** {date_str}  |  **Last contacted:** {last_str}")
+                        with c2:
+                            st.markdown(f"**Invite Link:**")
+                            st.code(p_invite_link, language="text")
+
+                        if not is_accepted:
+                            st.markdown("---")
+                            # Toggle follow-up drafter
+                            toggle_key = f"show_followup_{n['id']}"
+                            if st.button("📣 Compose Follow-Up Email", key=f"follow_up_btn_{n['id']}"):
+                                st.session_state[toggle_key] = not st.session_state.get(toggle_key, False)
+
+                            if st.session_state.get(toggle_key, False):
+                                mentee_name_display = mentee.get('name') or user.get('email', 'A Mentee')
+                                follow_up_template = (
+                                    f"Hi {n['mentor_name']},\n\n"
+                                    f"Hope you are doing well!\n\n"
+                                    f"Just wanted to check in to see if you had a chance to look at the mentorship invitation "
+                                    f"I sent recently to connect on Mentor Me:\n\n{p_invite_link}\n\n"
+                                    f"I would love to learn from your experience in {n['tech_focus']} if you have the capacity. "
+                                    f"No pressure at all — looking forward to hearing from you!\n\n"
+                                    f"Warm regards,\n{mentee_name_display}"
+                                )
+                                follow_up_msg = st.text_area(
+                                    "📝 Edit your follow-up message (will be sent directly via email):",
+                                    value=follow_up_template,
+                                    height=180,
+                                    key=f"msg_followup_{n['id']}",
+                                    help="This follow-up will be sent directly to the mentor's inbox with your Reply-To address attached."
+                                )
+
+                                fu_subject = f"Checking In: Mentorship Invitation from {mentee_name_display} (via Mentor Me)"
+                                
+                                fu_col1, fu_col2 = st.columns([2, 1])
+                                with fu_col1:
+                                    if st.button("🚀 Send Follow-Up Email Directly", key=f"send_direct_followup_{n['id']}", type="primary", use_container_width=True):
+                                        ok, res = api_send_nomination_followup(n['id'], follow_up_msg.strip(), fu_subject)
+                                        if ok:
+                                            st.success(f"✨ Follow-up email successfully sent to **{n['mentor_contact']}**! (Reply-To set to your email)")
+                                            st.session_state[toggle_key] = False
+                                            st.session_state['profile'] = None
+                                            st.rerun()
+                                        else:
+                                            st.error(res)
+                                with fu_col2:
+                                    if st.button("✖ Close", key=f"close_followup_{n['id']}", use_container_width=True):
+                                        st.session_state[toggle_key] = False
+                                        st.rerun()            
+        with tab_witech:
+            st.subheader("🌟 Women in Tech — Resources & Community")
+            st.caption("A curated space to support your journey as a woman in technical fields — communities, funding, research, and inspiration.")
+
+            # ── Live platform stat ──────────────────────────────────────────
+            all_hist = api_get_match_history() or []
+            female_mentor_count = sum(1 for h in all_hist if h.get('mentor_gender') == 'Female')
+            if female_mentor_count > 0:
+                st.success(f"🌟 **{female_mentor_count} active female mentor(s)** are currently registered on Mentor Me. You can connect with them via Platform Matches or the Outreach Hub.")
+
+            st.markdown("---")
+
+            # ── Communities ────────────────────────────────────────────────
+            st.markdown("### 🤝 Communities & Organisations")
+            comm_data = [
+                ("Rewriting the Code", "The largest peer-to-peer network for women in tech in college and early career — community, mentorship, and fellowships.", "https://rewritingthecode.org"),
+                ("Ada's List", "Global professional network for women and non-binary tech professionals — jobs, events, and community.", "https://www.adaslist.co"),
+                ("WiCyS — Women in CyberSecurity", "Dedicated to recruiting, retaining, and advancing women in cybersecurity.", "https://www.wicys.org"),
+                ("ABI / Grace Hopper Celebration", "The world's largest gathering of women technologists — hosts the Grace Hopper Conference annually.", "https://anitab.org"),
+                ("Code First Girls", "Free coding courses and nanodegrees for women and non-binary people in the UK.", "https://codefirstgirls.com"),
+                ("WISE — Women in Science & Engineering", "UK campaign supporting women in STEM from classroom to boardroom.", "https://www.wisecampaign.org.uk"),
+                ("Lesbians Who Tech & Allies", "Community for LGBTQ+ women and allies in tech — annual summit and network.", "https://lesbianswhotech.org"),
+                ("Women in Tech Global", "A global network and movement for gender diversity in the tech industry.", "https://women-in-tech.org"),
+            ]
+            for cname, cdesc, curl in comm_data:
+                with st.container(border=True):
+                    c1, c2 = st.columns([4, 1])
+                    c1.markdown(f"**{cname}**")
+                    c1.caption(cdesc)
+                    c2.markdown(f"[Visit →]({curl})")
+
+            st.markdown("---")
+
+            # ── Scholarships & Fellowships ──────────────────────────────────
+            st.markdown("### 🎓 Scholarships & Fellowships")
+            fund_data = [
+                ("Grace Hopper Celebration Scholarship", "Full conference scholarship for women and non-binary technologists to attend GHC annually.", "https://anitab.org/awards-grants/ghc-scholarships/"),
+                ("Google Women Techmakers Scholars", "Scholarships for women studying computer science and related technical fields globally.", "https://buildyourfuture.withgoogle.com/scholarships"),
+                ("TechWomen Fellowship (US State Dept.)", "Competitive professional exchange programme connecting women in STEM from emerging nations with Silicon Valley mentors.", "https://www.techwomen.org"),
+                ("Palantir Women in Technology Scholarship", "For women pursuing degrees in computer science, engineering, or related fields — awarded each hiring cycle.", "https://www.palantir.com/careers/students/"),
+            ]
+            for fname, fdesc, furl in fund_data:
+                with st.container(border=True):
+                    f1, f2 = st.columns([4, 1])
+                    f1.markdown(f"**{fname}**")
+                    f1.caption(fdesc)
+                    f2.markdown(f"[Apply →]({furl})")
+
+            st.markdown("---")
+
+            # ── Research & Reading ─────────────────────────────────────────
+            st.markdown("### 📚 Research, Statistics & Guides")
+            res_data = [
+                ("McKinsey: Women in the Workplace Report", "Annual research on the state of women in corporate America and globally.", "https://www.mckinsey.com/featured-insights/diversity-and-inclusion/women-in-the-workplace"),
+                ("WISE Statistics: Women in STEM", "UK data on women's participation in science, technology, engineering and mathematics.", "https://www.wisecampaign.org.uk/research-statistics/"),
+                ("Harvard: Women & Imposter Syndrome", "Research-backed guidance on tackling imposter phenomenon in technical careers.", "https://hbr.org/2021/02/stop-telling-women-they-have-imposter-syndrome"),
+                ("Project Implicit — Bias Assessment", "Understand hidden biases that affect hiring and promotion in tech.", "https://implicit.harvard.edu"),
+                ("Lean In: Women in Tech Toolkit", "Practical negotiation, self-advocacy and leadership guides for women in tech.", "https://leanin.org/women-in-the-workplace"),
+            ]
+            for rname, rdesc, rurl in res_data:
+                with st.container(border=True):
+                    r1, r2 = st.columns([4, 1])
+                    r1.markdown(f"**{rname}**")
+                    r1.caption(rdesc)
+                    r2.markdown(f"[Read →]({rurl})")
+
+            st.markdown("---")
+            # ── Direct LinkedIn Search for Women in Tech Leaders ───────────
+            with st.container(border=True):
+                st.markdown("### 👩‍💻 Connect with Women in Tech Leaders on LinkedIn")
+                st.caption("Generate a pre-filtered **Direct LinkedIn Deep Link** to discover senior female engineering leaders and mentors in your target field.")
+                
+                wit_role = mentee.get('target_mentor_expertise') or mentee.get('dev_type') or "Engineering Leadership"
+                wit_ctry = mentee.get('target_mentor_country') or mentee.get('country')
+                
+                wit_link_data = build_app_linkedin_deep_link(
+                    role=wit_role,
+                    country=wit_ctry,
+                    seniority="Senior",
+                    women_in_tech=True,
+                    mentorship_intent=True
+                )
+                
+                w_col1, w_col2 = st.columns([3, 2])
+                with w_col1:
+                    st.link_button("🌐 Search Female Tech Leaders on LinkedIn", wit_link_data["deep_link_url"], use_container_width=True)
+                with w_col2:
+                    st.caption(f"🎯 **Target Filters**: `{wit_role}` · `Women in Tech / Female Leader` · `{wit_ctry or 'Global'}`")
+
+            st.markdown("---")
+            st.caption("💡 Tip: You can ask the AI Career Advisor in the next tab about navigating any of these topics in the context of your career.")
+
+        with tab_advisor:
+            render_copilot_tab(mentee)
+
+    elif role == "MENTOR":
+        mentor = profile['mentor']
+        history = api_get_match_history()
+        
+        # Focus workflow for responding to incoming request
+        if st.session_state.get('focus_request_match'):
+            f_match_id = st.session_state['focus_request_match']
+            f_match = next((m for m in history if m['id'] == f_match_id), None)
+            if f_match:
+                st.markdown("---")
+                st.markdown("## 📩 Respond to Mentorship Request")
+                st.info(f"Review and respond to the incoming mentorship request from **{f_match['mentee_name']}**.")
+                
+                display_profile_card(
+                    name=f_match['mentee_name'],
+                    country=f_match['mentee_country'],
+                    ed_level=f_match.get('mentee_ed_level'),
+                    roles=f_match['mentee_devtype'],
+                    years=f_match['mentee_years'],
+                    org_size=f_match['mentee_org_size'],
+                    priorities=f_match.get('mentee_job_factors'),
+                    additional_details=f_match.get('mentee_additional_details'),
+                    user_id=f_match['mentee_id'],
+                    alternative_emails=f_match.get('mentee_alternative_emails'),
+                    linkedin_link=f_match.get('mentee_linkedin_link')
+                )
+                
+                cols = st.columns([1, 1, 1])
+                if cols[0].button("✅ Accept Connection", key="accept_focus"):
+                    st.session_state['show_accept_dialog_focus'] = True
+                    st.session_state['show_decline_dialog_focus'] = False
+                if cols[1].button("❌ Decline Connection", key="decline_focus"):
+                    st.session_state['show_accept_dialog_focus'] = False
+                    st.session_state['show_decline_dialog_focus'] = True
+                if cols[2].button("⬅️ Return to Dashboard", key="close_focus_request"):
+                    api_mark_match_notified(f_match_id)
+                    del st.session_state['focus_request_match']
+                    st.session_state['profile'] = None
+                    st.rerun()
+                    
+                if st.session_state.get('show_accept_dialog_focus', False):
+                    st.markdown("##### 📅 Share Your Availability")
+                    
+                    # Pre-fill/Guess timezone
+                    default_tz = mentor.get('timezone') or guess_timezone_from_email(user['email'])
+                    mentor_tz = st.selectbox(
+                        "Confirm Your Timezone:", 
+                        TIMEZONE_OPTIONS, 
+                        index=TIMEZONE_OPTIONS.index(default_tz) if default_tz in TIMEZONE_OPTIONS else 12,
+                        key="accept_tz_focus"
+                    )
+                    
+                    # Save timezone real-time on change!
+                    if mentor.get('timezone') != mentor_tz:
+                        api_update_profile({"timezone": mentor_tz})
+                        st.session_state['profile'] = None
+                        st.rerun()
+                        
+                    input_mode = st.radio("Choose Availability Format:", ["Select Date/Time Slots", "Custom Text / Scheduling Link"], key="input_mode_focus")
+                    
+                    mentor_avails = ""
+                    if input_mode == "Select Date/Time Slots":
+                        st.write("Propose up to 3 dates and times (in your local timezone):")
+                        
+                        c1, c2, c3 = st.columns([2, 1, 1])
+                        d1 = c1.date_input("Date (Slot 1)", key="d1_focus")
+                        t1_start = c2.time_input("Start (Slot 1)", datetime.time(10, 0), key="t1_start_focus")
+                        t1_end = c3.time_input("End (Slot 1)", datetime.time(10, 30), key="t1_end_focus")
+                        
+                        c4, c5, c6 = st.columns([2, 1, 1])
+                        d2 = c4.date_input("Date (Slot 2)", key="d2_focus")
+                        t2_start = c5.time_input("Start (Slot 2)", datetime.time(14, 0), key="t2_start_focus")
+                        t2_end = c6.time_input("End (Slot 2)", datetime.time(14, 30), key="t2_end_focus")
+                        
+                        c7, c8, c9 = st.columns([2, 1, 1])
+                        d3 = c7.date_input("Date (Slot 3)", key="d3_focus")
+                        t3_start = c8.time_input("Start (Slot 3)", datetime.time(16, 0), key="t3_start_focus")
+                        t3_end = c9.time_input("End (Slot 3)", datetime.time(16, 30), key="t3_end_focus")
+                        
+                        extra_note = st.text_input("Optional message/notes:", key="extra_note_focus")
+                        
+                        utc1_start = convert_local_to_utc_string(d1, t1_start, mentor_tz)
+                        utc1_end = convert_local_to_utc_string(d1, t1_end, mentor_tz)
+                        
+                        utc2_start = convert_local_to_utc_string(d2, t2_start, mentor_tz)
+                        utc2_end = convert_local_to_utc_string(d2, t2_end, mentor_tz)
+                        
+                        utc3_start = convert_local_to_utc_string(d3, t3_start, mentor_tz)
+                        utc3_end = convert_local_to_utc_string(d3, t3_end, mentor_tz)
+                        
+                        mentor_avails = f"UTC_DTS:{utc1_start}/{utc1_end},{utc2_start}/{utc2_end},{utc3_start}/{utc3_end}|NOTE:{extra_note}"
+                    else:
+                        default_avails = f"Schedule directly via my link:\n{mentor['contact_link']}" if mentor.get('contact_link') else "1. [Insert Day/Time 1]\n2. [Insert Day/Time 2]"
+                        mentor_avails = st.text_area("Custom Availability note:", value=default_avails, key="custom_avails_text_focus", height=120)
+                        
+                    if st.button("Confirm Accept & Share", key="confirm_accept_focus"):
+                        if api_match_action(f_match_id, "ACCEPT", availability_note=mentor_avails):
+                            api_mark_match_notified(f_match_id)
+                            st.success(f"Accepted connection with {f_match['mentee_name']}!")
+                            del st.session_state['focus_request_match']
+                            del st.session_state['show_accept_dialog_focus']
+                            st.session_state['profile'] = None
+                            st.rerun()
+                        else:
+                            st.error("Failed to accept connection.")
+                            
+                if st.session_state.get('show_decline_dialog_focus', False):
+                    if st.button("Confirm Decline", key="confirm_decline_focus"):
+                        if api_match_action(f_match_id, "DECLINE"):
+                            api_mark_match_notified(f_match_id)
+                            st.warning(f"Declined connection with {f_match['mentee_name']}.")
+                            del st.session_state['focus_request_match']
+                            del st.session_state['show_decline_dialog_focus']
+                            st.session_state['profile'] = None
+                            st.rerun()
+                        else:
+                            st.error("Failed to decline connection.")
+                st.markdown("---")
+                st.stop()
+                
+        unnotified_reqs = [m for m in history if m['status'] == 'REQUESTED' and not m.get('mentor_notified', False)]
+        unread_count = len(unnotified_reqs)
+        
+        col_greet, col_chat, col_bell = st.columns([6, 2, 2])
+        with col_greet:
+            display_welcome_header(mentor['name'], mentor['id'])
+            if st.button("📸 Edit Profile Photo", key="mentor_avatar_toggle"):
+                st.session_state['show_pic_uploader'] = not st.session_state.get('show_pic_uploader', False)
+                
+            # Conditionally display uploader when triggered in session state
+            if st.session_state.get('show_pic_uploader', False):
+                with st.container(border=True):
+                    st.info("📸 **Change Profile Picture**")
+                    profile_pic_file = st.file_uploader("Choose a photo (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="mentor_pic_upload_standalone")
+                    if profile_pic_file is not None:
+                        success, msg = api_upload_profile_pic(profile_pic_file.getvalue(), profile_pic_file.name)
+                        if success:
+                            st.success("Avatar updated!")
+                            st.session_state['profile'] = None
+                            st.session_state['show_pic_uploader'] = False
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    
+                    # Show Remove Picture option if user currently has an uploaded profile photo
+                    if mentor.get('profile_pic'):
+                        if st.button("🗑️ Remove Picture (Revert to Letter Avatar)", key="mentor_remove_pic_btn"):
+                            success, msg = api_delete_profile_pic()
+                            if success:
+                                st.success(msg)
+                                st.session_state['profile'] = None
+                                st.session_state['show_pic_uploader'] = False
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                                
+                    if st.button("❌ Close Photo Drawer", key="mentor_close_uploader_btn"):
+                        st.session_state['show_pic_uploader'] = False
+                        st.rerun()
+        with col_chat:
+            render_top_messaging_hub("MENTOR", profile, history)
+        with col_bell:
+            st.write("")
+            st.write("")
+            bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+            with st.popover(bell_label, use_container_width=True):
+                st.markdown("### 🔔 Notifications")
+                if unread_count == 0:
+                    st.write("No new notifications.")
+                else:
+                    for unm in unnotified_reqs:
+                        st.info(f"📩 **{unm['mentee_name']}** requested connection!")
+                        subcol1, subcol2 = st.columns([1, 1])
+                        if subcol1.button("👉 Respond", key=f"focus_notif_mentor_{unm['id']}"):
+                            st.session_state['focus_request_match'] = unm['id']
+                            st.rerun()
+                        if subcol2.button("Dismiss", key=f"dismiss_notif_mentor_{unm['id']}"):
+                            if api_mark_match_notified(unm['id']):
+                                st.session_state['profile'] = None
+                                st.rerun()
+        
+        tab_setup, tab_requests, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "🤝 Nominate a Colleague"])
+        
+        with tab_setup:
+            st.subheader("Profile Details")
+            if st.session_state.get('profile_save_success'):
+                st.success(st.session_state.pop('profile_save_success'))
+            with st.form("edit_profile_form"):
+
+                # ── Section 1: My Profile ───────────────────────────────────
+                with st.expander("👤 My Profile", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        name = st.text_input("Display Name", value=mentor['name'])
+                    with col2:
+                        country = st.selectbox("Country", COUNTRIES, index=COUNTRIES.index(mentor['country']) if mentor['country'] in COUNTRIES else 0)
+
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        raw_yrs_m = mentor['years_code_pro'] or 5.0
+                        safe_yrs_m = min(float(raw_yrs_m), 50.0)
+                        years = st.number_input("Years of Professional Experience", min_value=0.0, max_value=50.0, value=safe_yrs_m, step=0.5, format="%g")
+                        st.caption("Use decimals for part-years: e.g. 1.5 = 1 year & 6 months, 0.5 = 6 months.")
+                    with col4:
+                        ed_level = st.selectbox("Education Level", ED_LEVELS, index=ED_LEVELS.index(mentor['ed_level']) if mentor['ed_level'] in ED_LEVELS else 0)
+
+                    col5, col6 = st.columns(2)
+                    with col5:
+                        org_size = st.selectbox("Organization Size", ORG_SIZES, index=ORG_SIZES.index(mentor['org_size']) if mentor['org_size'] in ORG_SIZES else 0)
+                    with col6:
+                        gender = st.selectbox("Gender (Voluntary)", ["Not stated", "Female", "Male", "Non-binary"], index=["Not stated", "Female", "Male", "Non-binary"].index(mentor.get('gender') or "Not stated"))
+
+                    current_roles = [r.strip() for r in mentor['dev_type'].split(";")] if mentor['dev_type'] else []
+                    valid_current_roles = [r for r in current_roles if r in ALL_ROLES]
+                    picked_roles = st.multiselect("Role(s) / Areas of Expertise", ALL_ROLES, default=valid_current_roles if valid_current_roles else [ALL_ROLES[0]])
+                    st.caption("Select all roles that describe your expertise — used to match you with relevant mentees.")
+                    custom_roles = st.text_input("Additional roles not listed above (semicolon-separated)", key="custom_roles_mentor", placeholder="e.g. ML Engineer; Platform Architect")
+
+                    current_factors = [f.strip() for f in mentor['job_factors'].split(";")] if mentor['job_factors'] else []
+                    valid_current_factors = [f for f in current_factors if f in ALL_FACTORS]
+                    picked_factors = st.multiselect("Job Priorities / Values", ALL_FACTORS, default=valid_current_factors if valid_current_factors else [ALL_FACTORS[0]])
+                    st.caption("Helps the algorithm match you with mentees who share similar career values.")
+
+                    col7, col8 = st.columns(2)
+                    with col7:
+                        linkedin_link = st.text_input("LinkedIn Profile URL", value=mentor.get('linkedin_link') or "", placeholder="https://linkedin.com/in/yourprofile")
+                    with col8:
+                        contact_link = st.text_input("Direct Scheduling / Contact Link", value=mentor.get('contact_link') or "", placeholder="e.g. Calendly, Topmate, booking page URL")
+                        st.caption("Shown to matched mentees so they can book time with you directly.")
+
+                    current_tz = mentor.get('timezone') or "Europe/London"
+                    tz_idx = TIMEZONE_OPTIONS.index(current_tz) if current_tz in TIMEZONE_OPTIONS else 0
+                    timezone = st.selectbox("Your Timezone", TIMEZONE_OPTIONS, index=tz_idx)
+                    st.caption("Your availability slots will be displayed to mentees in their own local timezone.")
+
+                    additional_details = st.text_area("Bio / Mentoring Approach / Specialist Skills", value=mentor.get('additional_details') or "", placeholder="e.g. I am a senior cloud engineer specialising in GCP. I enjoy mentoring junior developers navigating their first production deployments...")
+                    st.caption("This is shown to potential mentees when reviewing your profile.")
+
+                    is_diversity_ally = st.checkbox(
+                        "I am an active Diversity & Inclusion Ally",
+                        value=bool(mentor.get('is_diversity_ally', False)),
+                        help="Marks you as committed to gender equality and supporting underrepresented groups in tech. Mentees who prefer a D&I-ally mentor will be prioritised to match with you."
+                    )
+
+                # ── Section 2: Mentorship Capacity ─────────────────────────
+                with st.expander("🎯 Mentorship Capacity & Availability", expanded=True):
+                    col9, col10 = st.columns(2)
+                    with col9:
+                        is_active = st.checkbox("Active / Available for New Matches", value=mentor['is_active'])
+                        st.caption("Uncheck to pause new mentee match requests without losing your profile.")
+                    with col10:
+                        max_mentees = st.number_input("Max Concurrent Mentees", min_value=1, max_value=10, value=mentor['max_mentees'])
+                        st.caption("The platform will stop offering you new matches once this threshold is reached.")
+
+                # ── CV Upload (bottom) ──────────────────────────────────────
+                st.markdown("---")
+                st.markdown("**📄 CV Upload**")
+                cv_file = st.file_uploader("Upload your CV (PDF format)", type=["pdf"], key="mentor_cv_upload")
+                if mentor.get('cv_path'):
+                    with st.expander("📄 View My Current Uploaded CV"):
+                        pdf_bytes = api_get_cv(mentor['id'])
+                        if pdf_bytes:
+                            display_pdf_inline(pdf_bytes)
+                        else:
+                            st.warning("Failed to retrieve CV from server.")
+
+                # ── Save Button ─────────────────────────────────────────────
+                save = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                if save:
+                    combined_roles = picked_roles.copy()
+                    if custom_roles.strip():
+                        for r in custom_roles.split(";"):
+                            r_clean = r.strip()
+                            if r_clean and r_clean not in combined_roles:
+                                combined_roles.append(r_clean)
+
+                    updated_data = {
+                        "name": name,
+                        "country": country,
+                        "ed_level": ed_level,
+                        "dev_type": ";".join(combined_roles),
+                        "years_code_pro": years,
+                        "job_factors": ";".join(picked_factors),
+                        "org_size": org_size,
+                        "is_active": is_active,
+                        "is_diversity_ally": is_diversity_ally,
+                        "max_mentees": max_mentees,
+                        "additional_details": additional_details,
+                        "contact_link": contact_link,
+                        "gender": gender if gender != "Not stated" else None,
+                        "timezone": timezone,
+                        "linkedin_link": linkedin_link.strip() if linkedin_link else None
+                    }
+                    success, msg = api_update_profile(updated_data)
+                    if success:
+                        if cv_file is not None:
+                            api_upload_cv(cv_file.getvalue(), cv_file.name)
+                        st.session_state['profile'] = None
+                        st.session_state['profile_save_success'] = msg
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            st.markdown("---")
+            with st.expander("🔐 Account Security & Double Authentication", expanded=False):
+                st.markdown("##### Double Authentication (2FA)")
+                st.caption("Protect your account with an extra verification layer requiring a 6-digit code at sign-in.")
+                user_info = profile.get('user', {}) if profile else {}
+                curr_2fa = user_info.get('two_factor_enabled', True)
+                col_2fa_status, col_2fa_act = st.columns([3, 1.2])
+                with col_2fa_status:
+                    st.write(f"Current Status: **{'🟢 Enabled (Active Protection)' if curr_2fa else '⚪ Disabled'}**")
+                with col_2fa_act:
+                    target_state = not curr_2fa
+                    toggle_btn_text = "Disable 2FA" if curr_2fa else "Enable 2FA"
+                    if st.button(toggle_btn_text, key="toggle_2fa_btn_mentor", use_container_width=True):
+                        t_ok, t_msg = api_toggle_2fa(target_state)
+                        if t_ok:
+                            st.success(t_msg)
+                            st.rerun()
+                        else:
+                            st.error(t_msg)
+                            
+        with tab_requests:
+            import urllib.parse as _up_req
+
+            st.subheader("Mentorship Requests & Active Connections")
+            st.caption("Review incoming mentee requests and manage your active mentoring connections.")
+
+            history = sorted(api_get_match_history() or [], key=lambda h: h.get('created_at', ''), reverse=True)
+
+            if not history:
+                st.info("No mentees have matched or requested a connection with you yet. Make sure your profile is set to **Active** in the Profile Setup tab.")
+            else:
+                # ── Metric bar ────────────────────────────────────────────────
+                total_r    = len(history)
+                active_r   = sum(1 for h in history if h['status'] == 'ACCEPTED')
+                pending_r  = sum(1 for h in history if h['status'] == 'REQUESTED')
+                declined_r = sum(1 for h in history if h['status'] == 'DECLINED')
+                rm1, rm2, rm3, rm4 = st.columns(4)
+                rm1.metric("📋 Total", total_r)
+                rm2.metric("✅ Active Connections", active_r)
+                rm3.metric("🔔 Awaiting Response", pending_r)
+                rm4.metric("❌ Declined", declined_r)
+                st.markdown("---")
+
+                # ════════════════════════════════════════════════════════════
+                # SECTION A — Incoming Requests (REQUESTED status)
+                # ════════════════════════════════════════════════════════════
+                proposed = [h for h in history if h['status'] == 'REQUESTED']
+                if proposed:
+                    st.markdown(f"### 🔔 Incoming Requests ({len(proposed)} awaiting your response)")
+                    st.caption("Review each mentee's profile before deciding. You can accept and share your availability in one step.")
+
+                    for p in proposed:
+                        raw_s = p.get('total_score', 0)
+                        pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
+                        if pct_s >= 80:
+                            sc_col, sc_lbl = "#1e7e34", "High Match"
+                        elif pct_s >= 50:
+                            sc_col, sc_lbl = "#856404", "Moderate Match"
+                        else:
+                            sc_col, sc_lbl = "#721c24", "Low Match"
+
+                        date_str = p['created_at'].split("T")[0] if 'T' in p['created_at'] else p['created_at']
+
+                        with st.container(border=True):
+                            hd_l, hd_r = st.columns([3, 1])
+                            with hd_l:
+                                st.markdown(f"##### {p['mentee_name']}")
+                                roles_disp = (p.get('mentee_devtype') or '').replace(';', ' · ')
+                                st.caption(f"📍 {p.get('mentee_country', '')}  ·  {roles_disp}  ·  {p.get('mentee_years', '?')} yrs exp")
+                                st.markdown(
+                                    f"<span style='background:#fff3cd; color:#856404; padding:3px 10px; "
+                                    f"border-radius:12px; font-size:0.8rem; font-weight:600;'>🔔 Awaiting Response</span>"
+                                    f"  <span style='color:#6c757d; font-size:0.8rem;'>· Requested {date_str}</span>",
+                                    unsafe_allow_html=True
+                                )
+                                if p.get('is_ally_boosted'):
+                                    st.info("🤝 **Diversity Ally Match**: This mentee requested a D&I Ally mentor — matched with you.")
+                            with hd_r:
+                                st.markdown(
+                                    f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                    f"<span style='color:{sc_col}; font-size:1rem; font-weight:700;'>{pct_s}%</span><br/>"
+                                    f"<span style='font-size:0.7rem; color:#6c757d;'>{sc_lbl}</span></div>",
+                                    unsafe_allow_html=True
+                                )
+
+                            with st.expander(f"👤 View {p['mentee_name']}'s Profile"):
+                                display_profile_card(
+                                    name=p['mentee_name'],
+                                    country=p.get('mentee_country'),
+                                    ed_level=p.get('mentee_ed_level'),
+                                    roles=p.get('mentee_devtype'),
+                                    years=p.get('mentee_years'),
+                                    org_size=p.get('mentee_org_size'),
+                                    priorities=p.get('mentee_job_factors'),
+                                    additional_details=p.get('mentee_additional_details'),
+                                    user_id=p.get('mentee_id'),
+                                    alternative_emails=p.get('mentee_alternative_emails'),
+                                    linkedin_link=p.get('mentee_linkedin_link')
+                                )
+
+                            if p.get('mentee_cv_path'):
+                                with st.expander(f"📄 Read {p['mentee_name']}'s CV"):
+                                    pdf_bytes = api_get_cv(p['mentee_id'])
+                                    if pdf_bytes:
+                                        display_pdf_inline(pdf_bytes)
+                                    else:
+                                        st.info("CV details unavailable.")
+
+                            # Accept / Decline buttons
+                            st.markdown("---")
+                            ac1, ac2 = st.columns(2)
+                            if ac1.button("✅ Accept Connection", key=f"accept_conn_{p['id']}", use_container_width=True):
+                                st.session_state[f"show_accept_dialog_{p['id']}"] = True
+                                st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                            if ac2.button("❌ Decline Connection", key=f"decline_conn_{p['id']}", use_container_width=True):
+                                st.session_state[f"show_accept_dialog_{p['id']}"] = False
+                                st.session_state[f"show_decline_dialog_{p['id']}"] = True
+
+                            # ── Accept dialog ─────────────────────────────────
+                            if st.session_state.get(f"show_accept_dialog_{p['id']}", False):
+                                st.markdown("##### 📅 Share Your Availability")
+                                default_tz = mentor.get('timezone') or guess_timezone_from_email(user['email'])
+                                mentor_tz = st.selectbox(
+                                    "Confirm Your Timezone:",
+                                    TIMEZONE_OPTIONS,
+                                    index=TIMEZONE_OPTIONS.index(default_tz) if default_tz in TIMEZONE_OPTIONS else 12,
+                                    key=f"accept_tz_{p['id']}"
+                                )
+                                if mentor.get('timezone') != mentor_tz:
+                                    api_update_profile({"timezone": mentor_tz})
+                                    st.session_state['profile'] = None
+                                    st.rerun()
+
+                                st.caption(f"Propose up to 3 time slots for your first sync with **{p['mentee_name']}**.")
+                                input_mode = st.radio(
+                                    "Availability Format:",
+                                    ["Select Date/Time Slots", "Custom Text / Scheduling Link"],
+                                    horizontal=True,
+                                    key=f"input_mode_{p['id']}"
+                                )
+
+                                mentor_avails = ""
+                                if input_mode == "Select Date/Time Slots":
+                                    c1, c2, c3 = st.columns([2, 1, 1])
+                                    d1 = c1.date_input("Date (Slot 1)", key=f"d1_{p['id']}")
+                                    t1_start = c2.time_input("Start", datetime.time(10, 0), key=f"t1_start_{p['id']}")
+                                    t1_end   = c3.time_input("End",   datetime.time(10, 30), key=f"t1_end_{p['id']}")
+                                    c4, c5, c6 = st.columns([2, 1, 1])
+                                    d2 = c4.date_input("Date (Slot 2)", key=f"d2_{p['id']}")
+                                    t2_start = c5.time_input("Start", datetime.time(14, 0), key=f"t2_start_{p['id']}")
+                                    t2_end   = c6.time_input("End",   datetime.time(14, 30), key=f"t2_end_{p['id']}")
+                                    c7, c8, c9 = st.columns([2, 1, 1])
+                                    d3 = c7.date_input("Date (Slot 3)", key=f"d3_{p['id']}")
+                                    t3_start = c8.time_input("Start", datetime.time(16, 0), key=f"t3_start_{p['id']}")
+                                    t3_end   = c9.time_input("End",   datetime.time(16, 30), key=f"t3_end_{p['id']}")
+                                    extra_note = st.text_input("Optional notes for the mentee:", key=f"extra_note_{p['id']}")
+                                    utc1_s = convert_local_to_utc_string(d1, t1_start, mentor_tz)
+                                    utc1_e = convert_local_to_utc_string(d1, t1_end,   mentor_tz)
+                                    utc2_s = convert_local_to_utc_string(d2, t2_start, mentor_tz)
+                                    utc2_e = convert_local_to_utc_string(d2, t2_end,   mentor_tz)
+                                    utc3_s = convert_local_to_utc_string(d3, t3_start, mentor_tz)
+                                    utc3_e = convert_local_to_utc_string(d3, t3_end,   mentor_tz)
+                                    mentor_avails = f"UTC_DTS:{utc1_s}/{utc1_e},{utc2_s}/{utc2_e},{utc3_s}/{utc3_e}|NOTE:{extra_note}"
+                                else:
+                                    default_avails = f"Schedule directly via my link:\n{mentor['contact_link']}" if mentor.get('contact_link') else "1. [Insert Day/Time 1]\n2. [Insert Day/Time 2]\n3. [Insert Day/Time 3]"
+                                    mentor_avails = st.text_area("Custom availability note:", value=default_avails, key=f"custom_avails_text_{p['id']}", height=120)
+
+                                conf1, conf2 = st.columns(2)
+                                if conf1.button("✅ Confirm & Accept", key=f"confirm_accept_{p['id']}", use_container_width=True):
+                                    if api_match_action(p['id'], "ACCEPT", availability_note=mentor_avails):
+                                        st.success(f"Connection with {p['mentee_name']} accepted!")
+                                        st.session_state[f"show_accept_dialog_{p['id']}"] = False
+                                        st.session_state['profile'] = None
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to accept connection.")
+                                if conf2.button("↩ Cancel", key=f"cancel_accept_{p['id']}", use_container_width=True):
+                                    st.session_state[f"show_accept_dialog_{p['id']}"] = False
+                                    st.rerun()
+
+                            # ── Decline dialog ────────────────────────────────
+                            if st.session_state.get(f"show_decline_dialog_{p['id']}", False):
+                                st.warning(f"Are you sure you want to decline the request from **{p['mentee_name']}**?")
+                                dec1, dec2 = st.columns(2)
+                                if dec1.button("Confirm Decline", key=f"confirm_decline_{p['id']}", use_container_width=True):
+                                    if api_match_action(p['id'], "DECLINE"):
+                                        st.warning(f"Declined connection with {p['mentee_name']}.")
+                                        st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                                        st.session_state['profile'] = None
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to decline connection.")
+                                if dec2.button("↩ Cancel", key=f"cancel_decline_{p['id']}", use_container_width=True):
+                                    st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                                    st.rerun()
+
+                # ════════════════════════════════════════════════════════════
+                # SECTION B — Active Connections
+                # ════════════════════════════════════════════════════════════
+                active_conns = [h for h in history if h['status'] == 'ACCEPTED']
+                if active_conns:
+                    st.markdown("---")
+                    st.markdown(f"### ✅ Active Connections ({len(active_conns)})")
+                    st.caption("Your current mentees. Reach out to welcome them and coordinate your first session.")
+
+                    for conn in active_conns:
+                        raw_sc = conn.get('total_score', 0)
+                        pct_sc = int(round(raw_sc * 100)) if isinstance(raw_sc, float) and raw_sc <= 1.0 else int(round(raw_sc))
+                        date_c = conn['created_at'].split("T")[0] if 'T' in conn['created_at'] else conn['created_at']
+
+                        with st.container(border=True):
+                            cl, cr = st.columns([3, 1])
+                            with cl:
+                                st.markdown(f"##### {conn['mentee_name']}")
+                                roles_c = (conn.get('mentee_devtype') or '').replace(';', ' · ')
+                                st.caption(f"📍 {conn.get('mentee_country', '')}  ·  {roles_c}  ·  {conn.get('mentee_years', '?')} yrs exp")
+                                st.markdown(
+                                    f"<span style='background:#d4edda; color:#155724; padding:3px 10px; "
+                                    f"border-radius:12px; font-size:0.8rem; font-weight:600;'>✅ Connected</span>"
+                                    f"  <span style='color:#6c757d; font-size:0.8rem;'>· Since {date_c}</span>",
+                                    unsafe_allow_html=True
+                                )
+                                contact_parts = []
+                                if conn.get('mentee_email'):
+                                    contact_parts.append(f"📧 `{conn['mentee_email']}`")
+                                if conn.get('mentee_linkedin_link'):
+                                    contact_parts.append(f"[🌐 LinkedIn]({conn['mentee_linkedin_link']})")
+                                if contact_parts:
+                                    st.markdown("  ·  ".join(contact_parts))
+                                if conn.get('is_ally_boosted'):
+                                    st.success("🤝 **Diversity Ally Match**: Matched because you are a registered D&I Ally and the mentee requested one.")
+                            with cr:
+                                st.markdown(
+                                    f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                    f"<span style='font-size:1rem; font-weight:700; color:#1e7e34;'>{pct_sc}%</span><br/>"
+                                    f"<span style='font-size:0.7rem; color:#6c757d;'>Match Score</span></div>",
+                                    unsafe_allow_html=True
+                                )
+
+                            with st.expander(f"👤 View {conn['mentee_name']}'s Profile"):
+                                display_profile_card(
+                                    name=conn['mentee_name'],
+                                    country=conn.get('mentee_country'),
+                                    ed_level=conn.get('mentee_ed_level'),
+                                    roles=conn.get('mentee_devtype'),
+                                    years=conn.get('mentee_years'),
+                                    org_size=conn.get('mentee_org_size'),
+                                    priorities=conn.get('mentee_job_factors'),
+                                    additional_details=conn.get('mentee_additional_details'),
+                                    user_id=conn.get('mentee_id'),
+                                    email=conn.get('mentee_email'),
+                                    alternative_emails=conn.get('mentee_alternative_emails'),
+                                    linkedin_link=conn.get('mentee_linkedin_link')
+                                )
+
+                            if conn.get('mentee_cv_path'):
+                                with st.expander(f"📄 Read {conn['mentee_name']}'s CV"):
+                                    pdf_bytes = api_get_cv(conn['mentee_id'])
+                                    if pdf_bytes:
+                                        display_pdf_inline(pdf_bytes)
+
+                            with st.expander(f"📅 Coordinate Intro Call with {conn['mentee_name']}"):
+                                st.caption("Edit and send an email sharing your availability for the first 25-minute sync.")
+                                avail_template = (
+                                    f"Hi {conn['mentee_name']},\n\n"
+                                    f"Welcome! I am looking forward to our mentorship partnership.\n\n"
+                                    f"Here are a few times I am available for our introductory 25-minute sync:\n"
+                                    f"- [Insert Day/Time 1]\n"
+                                    f"- [Insert Day/Time 2]\n"
+                                    f"- [Insert Day/Time 3]\n\n"
+                                )
+                                if mentor.get('contact_link'):
+                                    avail_template += f"Alternatively, you can book directly on my calendar:\n{mentor['contact_link']}\n\n"
+                                avail_template += "Please let me know which slot works best and send a calendar invite once confirmed!\n\nBest regards,\n" + mentor.get('name', '')
+                                avail_msg = st.text_area("Edit your availability email:", value=avail_template, height=200, key=f"avail_msg_{conn['id']}")
+                                avail_subject = "Scheduling: Mentor Me Intro Sync"
+                                avail_mailto = f"mailto:{conn['mentee_email']}?subject={_up_req.quote(avail_subject)}&body={_up_req.quote(avail_msg)}"
+                                
+                                m_title_val = f"Mentor Me Intro Sync: {mentor.get('name', 'Mentor')} & {conn['mentee_name']}"
+                                m_gcal_url = generate_google_calendar_url(
+                                    title=m_title_val,
+                                    description=avail_msg,
+                                    location="Virtual (Mentor Me Platform)",
+                                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                                )
+                                m_ics_bytes = generate_ics_calendar_file(
+                                    title=m_title_val,
+                                    description=avail_msg,
+                                    location="Virtual (Mentor Me Platform)",
+                                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                                )
+                                
+                                m_col1, m_col2, m_col3 = st.columns(3)
+                                with m_col1:
+                                    st.markdown(
+                                        f'<a href="{avail_mailto}" target="_blank" style="text-decoration:none;">'
+                                        f'<button style="background:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
+                                        f'✉️ Email Mentee</button></a>',
+                                        unsafe_allow_html=True
+                                    )
+                                with m_col2:
+                                    st.link_button("📅 Add to Google Calendar", m_gcal_url, use_container_width=True)
+                                with m_col3:
+                                    st.download_button(
+                                        "📥 Download .ICS Invite",
+                                        data=m_ics_bytes,
+                                        file_name=f"mentor_me_{conn['mentee_name'].replace(' ', '_')}.ics",
+                                        mime="text/calendar",
+                                        use_container_width=True,
+                                        key=f"download_ics_mentor_{conn['id']}"
+                                    )
+
+                            with st.expander(f"💬 In-App Direct Chat with {conn['mentee_name']}", expanded=True):
+                                display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_req_{conn['id']}")
+
+        with tab_nominate:
+            import urllib.parse as _up_nom
+            st.subheader("🤝 Pass the Torch — Nominate a Peer Mentor")
+            st.caption(
+                "Help expand our pool of senior technical role models and diversity allies. "
+                "Nominate talented colleagues, senior engineers, or researchers from your network to join Mentor Me as mentors."
+            )
+
+            # ── Section 1: Nomination Form ────────────────────────────────────
+            st.markdown("### ✉️ Invite a Colleague")
+            with st.form("colleague_nomination_form", clear_on_submit=True):
+                cn_col1, cn_col2 = st.columns(2)
+                with cn_col1:
+                    colleague_name = st.text_input("Colleague's Full Name", placeholder="e.g. Dr. Sarah Jenkins")
+                with cn_col2:
+                    colleague_email = st.text_input("Colleague's Email Address", placeholder="e.g. sarah.jenkins@company.com")
+                
+                colleague_focus = st.text_input(
+                    "Their Area(s) of Technical Expertise",
+                    placeholder="e.g. Cloud Architecture, Distributed Systems, ML Engineering, Cybersecurity"
+                )
+                
+                colleague_submit = st.form_submit_button("🔗 Generate Colleague Invitation & Email Draft", use_container_width=True)
+                
+                if colleague_submit:
+                    if not colleague_name.strip() or not colleague_email.strip() or not colleague_focus.strip():
+                        st.error("Please fill in all three fields to generate the invitation.")
+                    elif "@" not in colleague_email or "." not in colleague_email:
+                        st.error("Please enter a valid email address.")
+                    else:
+                        ok, res = api_nominate_mentor(colleague_name.strip(), colleague_email.strip(), colleague_focus.strip())
+                        if ok:
+                            st.session_state['latest_colleague_nomination'] = res
+                            st.success(f"✅ Invitation created for {colleague_name}! See the email designer below.")
+                            st.rerun()
+                        else:
+                            st.error(res)
+
+            # ── Inline Email Designer ─────────────────────────────────────────
+            if 'latest_colleague_nomination' in st.session_state:
+                cnom = st.session_state['latest_colleague_nomination']
+                c_invite_link = f"{get_app_base_url()}/?invite_code={cnom['invite_code']}"
+                st.markdown("---")
+                st.markdown("### ✉️ Colleague Invitation Email Designer")
+                st.caption("Personalize this warm invitation message before sending it to your colleague.")
+                
+                c_email_template = (
+                    f"Hi {cnom['mentor_name']},\n\n"
+                    f"I hope you're having a great week!\n\n"
+                    f"I am currently mentoring on Mentor Me — an equitable mentorship pairing platform dedicated to "
+                    f"connecting and empowering early-career women in technical fields (aligned with UN SDG 5).\n\n"
+                    f"Given your strong expertise in {cnom['tech_focus']}, I thought of you immediately and know you would make "
+                    f"an incredible mentor and role model for talented junior engineers and researchers on the platform.\n\n"
+                    f"You have full control over your capacity (e.g. 1 mentee at a time, 25-minute syncs). "
+                    f"I've generated a direct invitation link for you to set up a mentor profile:\n\n"
+                    f"{c_invite_link}\n\n"
+                    f"I'd love to have you in the mentor community alongside me!\n\n"
+                    f"Best regards,\n{mentor.get('name', 'Your Colleague')}"
+                )
+                
+                c_outreach_msg = st.text_area("Invitation Email Body:", value=c_email_template, height=220, key=f"drafted_colleague_msg_{cnom['id']}")
+                c_inv_subj = f"Mentorship Invitation: Join me on Mentor Me — {mentor.get('name', 'A Colleague')}"
+                c_mailto_url = f"mailto:{cnom['mentor_contact']}?subject={_up_nom.quote(c_inv_subj)}&body={_up_nom.quote(c_outreach_msg)}"
+                
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    st.markdown(
+                        f'<a href="{c_mailto_url}" target="_blank" style="text-decoration:none;">'
+                        f'<button style="background:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%;">'
+                        f'✉️ Open in Email Client</button></a>',
+                        unsafe_allow_html=True
+                    )
+                with c_btn2:
+                    if st.button("✖ Close Email Designer", key="close_colleague_designer_btn", use_container_width=True):
+                        del st.session_state['latest_colleague_nomination']
+                        st.rerun()
+                st.caption(f"🔗 Colleague Invite Code: `{cnom['invite_code']}` · Direct Link: `{c_invite_link}`")
+
+            # ── Section 2: My Nominated Colleagues Tracking Log ──────────────
+            st.markdown("---")
+            st.markdown("### 📋 My Nominated Colleagues")
+            colleague_noms = api_get_nominations() or []
+            if not colleague_noms:
+                st.info("You haven't nominated any colleagues yet. Use the form above to invite peers to join as mentors.")
+            else:
+                st.caption(f"You have nominated **{len(colleague_noms)} colleague(s)** to join as mentors.")
+                for cn_idx, c_item in enumerate(colleague_noms):
+                    c_status = c_item.get('status', 'PENDING')
+                    c_badge_bg = "#d4edda" if c_status == "ACCEPTED" else "#fff3cd"
+                    c_badge_color = "#155724" if c_status == "ACCEPTED" else "#856404"
+                    c_date = c_item.get('created_at', '').split('T')[0] if 'T' in c_item.get('created_at', '') else c_item.get('created_at', '')
+                    
+                    with st.container(border=True):
+                        cn_l, cn_r = st.columns([3, 1])
+                        with cn_l:
+                            st.markdown(f"##### {c_item['mentor_name']}")
+                            st.caption(f"📧 `{c_item['mentor_contact']}`  ·  🎯 {c_item['tech_focus']}")
+                            st.markdown(
+                                f"<span style='background:{c_badge_bg}; color:{c_badge_color}; padding:3px 10px; "
+                                f"border-radius:12px; font-size:0.8rem; font-weight:600;'>{c_status}</span>"
+                                f"  <span style='color:#6c757d; font-size:0.8rem;'>· Invited on {c_date}</span>",
+                                unsafe_allow_html=True
+                            )
+                        with cn_r:
+                            st.markdown(
+                                f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:6px;'>"
+                                f"<span style='font-size:0.75rem; color:#6c757d;'>Invite Code</span><br/>"
+                                f"<code style='font-weight:700; font-size:0.9rem;'>{c_item['invite_code']}</code></div>",
+                                unsafe_allow_html=True
+                            )
+
+    elif role == "ADMIN":
+        st.header("🛡️ Administrator Dashboard")
+        st.caption("Platform-wide oversight, equity analytics, and system tools.")
+
+        history = api_get_match_history() or []
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION A — Equity Analytics Dashboard
+        # ════════════════════════════════════════════════════════════════════
+        st.subheader("📊 Equity Impact Analytics")
+        st.caption("Live metrics measuring the platform's progress toward equitable mentorship for early-career women in tech (SDG 5).")
+
+        total_matches   = len(history)
+        accepted        = [h for h in history if h['status'] == 'ACCEPTED']
+        female_mentee   = [h for h in history if h.get('mentee_gender') == 'Female']
+        female_mentor   = [h for h in history if h.get('mentor_gender') == 'Female']
+        ff_pairs        = [h for h in accepted if h.get('mentee_gender') == 'Female' and h.get('mentor_gender') == 'Female']
+        ally_boosted    = [h for h in history if h.get('is_ally_boosted')]
+        rep_boosted     = [h for h in history if h.get('is_representation_boosted')]
+
+        em1, em2, em3, em4 = st.columns(4)
+        em1.metric("📋 Total Matches", total_matches)
+        em2.metric("✅ Accepted Connections", len(accepted))
+        em3.metric("♀️ Female Mentees", len(set(h['mentee_name'] for h in female_mentee)))
+        em4.metric("♀️ Female Mentors", len(set(h['mentor_name'] for h in female_mentor)))
+
+        st.markdown("")
+        em5, em6, em7, em8 = st.columns(4)
+        ff_rate = f"{int(round(len(ff_pairs)/len(accepted)*100))}%" if accepted else "N/A"
+        ally_rate = f"{int(round(len(ally_boosted)/total_matches*100))}%" if total_matches else "N/A"
+        rep_rate  = f"{int(round(len(rep_boosted)/total_matches*100))}%" if total_matches else "N/A"
+        avg_score = f"{int(round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100))}%" if accepted else "N/A"
+        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections that are female mentee → female mentor")
+        em6.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied")
+        em7.metric("🌟 Rep. Boost Rate", rep_rate, help="% of all matches where the gender representation boost was applied")
+        em8.metric("📈 Avg. Accepted Score", avg_score)
+
+        if total_matches > 0:
+            st.markdown("---")
+            st.markdown("**Career Stage Distribution of Mentees Matched**")
+            tier_counts = {}
+            for h in history:
+                tier = h.get('mentee_exp_tier') or 'Unknown'
+                tier_counts[tier] = tier_counts.get(tier, 0) + 1
+            if tier_counts:
+                tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Count']).sort_values('Count', ascending=False)
+                st.bar_chart(tier_df.set_index('Career Stage'))
+
+            st.markdown("**Country Diversity of Matched Mentors**")
+            country_counts = {}
+            for h in history:
+                c = h.get('mentor_country') or 'Unknown'
+                country_counts[c] = country_counts.get(c, 0) + 1
+            if country_counts:
+                country_df = pd.DataFrame(list(country_counts.items()), columns=['Country', 'Mentors']).sort_values('Mentors', ascending=False).head(10)
+                st.bar_chart(country_df.set_index('Country'))
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION B — Global Match Log
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("📋 Global Platform Matches Log")
+        if not history:
+            st.info("No match transactions exist in the database.")
+        else:
+            admin_list = []
+            for h in history:
+                raw_s = h.get('total_score', 0)
+                pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
+                admin_list.append({
+                    'Match ID': h['id'],
+                    'Mentee': h['mentee_name'],
+                    'Mentor': h['mentor_name'],
+                    'Score': f"{pct_s}%",
+                    'Confidence': h['match_quality'],
+                    'Status': h['status'],
+                    'Rep. Boost': '🌟' if h.get('is_representation_boosted') else '',
+                    'Ally Boost': '🤝' if h.get('is_ally_boosted') else '',
+                    'Date': h['created_at'].split('T')[0] if 'T' in h.get('created_at','') else h.get('created_at','')
+                })
+            st.dataframe(pd.DataFrame(admin_list), use_container_width=True)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION C — System Tools
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("⚙️ System Administration Tools")
+        st.warning("⚠️ **Danger Zone**: Wiping the database is permanent and deletes all users, mentors, mentees, matches, and external invitations.")
+        st.write("This tool allows resetting the database to a completely clean slate, ready for real users to sign up and test.")
+
+        confirm_reset = st.checkbox("I confirm that I want to completely wipe all simulated database records.")
+        if st.button("🔴 Wipe Database & Reset System", type="primary", disabled=not confirm_reset):
+            success, msg = api_reset_database()
+            if success:
+                st.success("🎉 Database wiped and reset successfully!")
+                st.session_state['access_token'] = None
+                st.session_state['profile'] = None
+                st.info("You have been logged out. A clean admin account has been created: **admin@mentorme.demo** with password **adminpassword**.")
+                if st.button("Proceed to Login"):
+                    st.rerun()
+            else:
+                st.error(f"Failed to reset database: {msg}")

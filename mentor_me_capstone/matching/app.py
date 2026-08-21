@@ -19,26 +19,30 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
 # In-memory FastAPI dispatcher for seamless 1-click cloud deployment (zero port conflicts)
 _in_memory_client = None
-try:
-    from fastapi.testclient import TestClient
+
+def _get_in_memory_client():
+    global _in_memory_client
+    if _in_memory_client is not None:
+        return _in_memory_client
     try:
-        from backend.main import app as _fastapi_app
-    except ImportError:
-        from matching.backend.main import app as _fastapi_app
-    _in_memory_client = TestClient(_fastapi_app)
-except Exception:
-    _in_memory_client = None
+        from fastapi.testclient import TestClient
+        try:
+            from backend.main import app as _fastapi_app
+        except ImportError:
+            from matching.backend.main import app as _fastapi_app
+        _in_memory_client = TestClient(_fastapi_app)
+        return _in_memory_client
+    except Exception:
+        return None
 
 class _SmartAPIClient:
     """
     Seamless dispatcher:
-    If targeting local API (127.0.0.1:8000 or localhost) and _in_memory_client is available,
+    If targeting local API (127.0.0.1:8000 or localhost),
     dispatches in-memory directly to the FastAPI app with 0 network latency and 0 connection errors.
     Otherwise, falls back to standard requests HTTP.
     """
     def _is_local_api(self, url: str) -> bool:
-        if not _in_memory_client:
-            return False
         return ("127.0.0.1:8000" in url or "localhost:8000" in url or (API_URL in url and ("127.0.0.1" in API_URL or "localhost" in API_URL)))
 
     def _to_path(self, url: str) -> str:
@@ -52,35 +56,27 @@ class _SmartAPIClient:
         return url
 
     def get(self, url, **kwargs):
-        if self._is_local_api(url):
-            try:
-                return _in_memory_client.get(self._to_path(url), **kwargs)
-            except Exception:
-                pass
+        client = _get_in_memory_client()
+        if self._is_local_api(url) and client is not None:
+            return client.get(self._to_path(url), **kwargs)
         return requests.get(url, **kwargs)
 
     def post(self, url, **kwargs):
-        if self._is_local_api(url):
-            try:
-                return _in_memory_client.post(self._to_path(url), **kwargs)
-            except Exception:
-                pass
+        client = _get_in_memory_client()
+        if self._is_local_api(url) and client is not None:
+            return client.post(self._to_path(url), **kwargs)
         return requests.post(url, **kwargs)
 
     def put(self, url, **kwargs):
-        if self._is_local_api(url):
-            try:
-                return _in_memory_client.put(self._to_path(url), **kwargs)
-            except Exception:
-                pass
+        client = _get_in_memory_client()
+        if self._is_local_api(url) and client is not None:
+            return client.put(self._to_path(url), **kwargs)
         return requests.put(url, **kwargs)
 
     def delete(self, url, **kwargs):
-        if self._is_local_api(url):
-            try:
-                return _in_memory_client.delete(self._to_path(url), **kwargs)
-            except Exception:
-                pass
+        client = _get_in_memory_client()
+        if self._is_local_api(url) and client is not None:
+            return client.delete(self._to_path(url), **kwargs)
         return requests.delete(url, **kwargs)
 
 api_http = _SmartAPIClient()

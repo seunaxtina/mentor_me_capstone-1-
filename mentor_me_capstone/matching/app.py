@@ -17,6 +17,74 @@ if parent_dir not in sys.path:
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
+# In-memory FastAPI dispatcher for seamless 1-click cloud deployment (zero port conflicts)
+_in_memory_client = None
+try:
+    from fastapi.testclient import TestClient
+    try:
+        from backend.main import app as _fastapi_app
+    except ImportError:
+        from matching.backend.main import app as _fastapi_app
+    _in_memory_client = TestClient(_fastapi_app)
+except Exception:
+    _in_memory_client = None
+
+class _SmartAPIClient:
+    """
+    Seamless dispatcher:
+    If targeting local API (127.0.0.1:8000 or localhost) and _in_memory_client is available,
+    dispatches in-memory directly to the FastAPI app with 0 network latency and 0 connection errors.
+    Otherwise, falls back to standard requests HTTP.
+    """
+    def _is_local_api(self, url: str) -> bool:
+        if not _in_memory_client:
+            return False
+        return ("127.0.0.1:8000" in url or "localhost:8000" in url or (API_URL in url and ("127.0.0.1" in API_URL or "localhost" in API_URL)))
+
+    def _to_path(self, url: str) -> str:
+        if "127.0.0.1:8000" in url:
+            return url.split("127.0.0.1:8000")[-1]
+        if "localhost:8000" in url:
+            return url.split("localhost:8000")[-1]
+        if API_URL in url:
+            sub = url.split(API_URL)[-1]
+            return f"/api/v1/{sub.lstrip('/')}"
+        return url
+
+    def get(self, url, **kwargs):
+        if self._is_local_api(url):
+            try:
+                return _in_memory_client.get(self._to_path(url), **kwargs)
+            except Exception:
+                pass
+        return requests.get(url, **kwargs)
+
+    def post(self, url, **kwargs):
+        if self._is_local_api(url):
+            try:
+                return _in_memory_client.post(self._to_path(url), **kwargs)
+            except Exception:
+                pass
+        return requests.post(url, **kwargs)
+
+    def put(self, url, **kwargs):
+        if self._is_local_api(url):
+            try:
+                return _in_memory_client.put(self._to_path(url), **kwargs)
+            except Exception:
+                pass
+        return requests.put(url, **kwargs)
+
+    def delete(self, url, **kwargs):
+        if self._is_local_api(url):
+            try:
+                return _in_memory_client.delete(self._to_path(url), **kwargs)
+            except Exception:
+                pass
+        return requests.delete(url, **kwargs)
+
+api_http = _SmartAPIClient()
+
 def ensure_backend_running():
     """
     If running in a single-service cloud environment (e.g. Streamlit Community Cloud or Hugging Face),
@@ -414,7 +482,7 @@ def fetch_profile():
         return
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/users/me", headers=headers)
+        response = api_http.get(f"{API_URL}/users/me", headers=headers)
         if response.status_code == 200:
             st.session_state['profile'] = response.json()
         else:
@@ -452,7 +520,7 @@ if "code" in st.query_params:
         
     try:
         payload = {"provider": _prov, "code": _auth_code, "role": _role, "mode": _mode, "invite_code": _inv}
-        resp = requests.post(f"{API_URL}/auth/sso/callback", json=payload)
+        resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
             st.session_state['access_token'] = resp.json()['access_token']
             st.session_state['two_factor_challenge'] = None
@@ -487,7 +555,7 @@ elif "sso_provider" in st.query_params:
             "mode": _mode,
             "invite_code": _inv
         }
-        resp = requests.post(f"{API_URL}/auth/sso", json=payload)
+        resp = api_http.post(f"{API_URL}/auth/sso", json=payload)
         if resp.status_code == 200:
             st.session_state['access_token'] = resp.json()['access_token']
             st.session_state['two_factor_challenge'] = None
@@ -507,7 +575,7 @@ elif "sso_provider" in st.query_params:
 # Helper functions for API communication
 def api_login(email, password):
     try:
-        response = requests.post(f"{API_URL}/auth/token", data={"username": email, "password": password})
+        response = api_http.post(f"{API_URL}/auth/token", data={"username": email, "password": password})
         if response.status_code == 200:
             res_data = response.json()
             if res_data.get("two_factor_required"):
@@ -532,7 +600,7 @@ def api_verify_2fa(code):
     if not challenge_token:
         return False, "No active security challenge session. Please sign in again."
     try:
-        response = requests.post(f"{API_URL}/auth/2fa/verify", json={"challenge_token": challenge_token, "code": code.strip()})
+        response = api_http.post(f"{API_URL}/auth/2fa/verify", json={"challenge_token": challenge_token, "code": code.strip()})
         if response.status_code == 200:
             res_data = response.json()
             st.session_state['access_token'] = res_data['access_token']
@@ -551,7 +619,7 @@ def api_resend_2fa():
     if not challenge_token:
         return False, "No active challenge session."
     try:
-        response = requests.post(f"{API_URL}/auth/2fa/resend", json={"challenge_token": challenge_token})
+        response = api_http.post(f"{API_URL}/auth/2fa/resend", json={"challenge_token": challenge_token})
         if response.status_code == 200:
             res_data = response.json()
             st.session_state['two_factor_challenge'] = res_data["challenge_token"]
@@ -566,7 +634,7 @@ def api_resend_2fa():
 def api_toggle_2fa(enabled: bool):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.post(f"{API_URL}/auth/2fa/toggle", json={"enabled": enabled}, headers=headers)
+        response = api_http.post(f"{API_URL}/auth/2fa/toggle", json={"enabled": enabled}, headers=headers)
         if response.status_code == 200:
             fetch_profile()
             return True, response.json().get("message", "Updated 2FA status.")
@@ -586,7 +654,7 @@ def api_sso_authenticate(provider: str, email: str, name: str = None, picture: s
             "invite_code": invite_code,
             "token_or_code": token_or_code
         }
-        response = requests.post(f"{API_URL}/auth/sso", json=payload)
+        response = api_http.post(f"{API_URL}/auth/sso", json=payload)
         if response.status_code == 200:
             res_data = response.json()
             st.session_state['access_token'] = res_data['access_token']
@@ -606,7 +674,7 @@ def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", i
         params = {"provider": provider, "role": role, "mode": mode}
         if invite_code:
             params["invite_code"] = invite_code
-        response = requests.get(f"{API_URL}/auth/sso/authorize-url", params=params)
+        response = api_http.get(f"{API_URL}/auth/sso/authorize-url", params=params)
         if response.status_code == 200:
             return response.json().get("auth_url")
         return f"/?sso_provider={provider}&role={role}&mode={mode}"
@@ -618,7 +686,7 @@ def api_signup(email, password, role, invite_code=None):
         payload = {"email": email, "password": password, "role": role.upper()}
         if invite_code:
             payload["invite_code"] = invite_code
-        response = requests.post(f"{API_URL}/auth/signup", json=payload)
+        response = api_http.post(f"{API_URL}/auth/signup", json=payload)
         if response.status_code == 201:
             return True, "Registration successful! You can now log in."
         else:
@@ -636,7 +704,7 @@ def api_nominate_mentor(name, contact, tech_focus, custom_message=None):
         "custom_message": custom_message
     }
     try:
-        response = requests.post(f"{API_URL}/profile/nominate", json=payload, headers=headers)
+        response = api_http.post(f"{API_URL}/profile/nominate", json=payload, headers=headers)
         if response.status_code == 200:
             return True, response.json()
         else:
@@ -651,7 +719,7 @@ def api_nominate_mentor(name, contact, tech_focus, custom_message=None):
 def api_get_nominations():
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/profile/nominations", headers=headers)
+        response = api_http.get(f"{API_URL}/profile/nominations", headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -661,7 +729,7 @@ def api_get_nominations():
 def api_mark_nomination_contacted(nomination_id):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.post(f"{API_URL}/profile/nominate/{nomination_id}/contacted", headers=headers)
+        response = api_http.post(f"{API_URL}/profile/nominate/{nomination_id}/contacted", headers=headers)
         return response.status_code == 200
     except Exception:
         return False
@@ -673,7 +741,7 @@ def api_send_nomination_followup(nomination_id, custom_message=None, subject=Non
         "subject": subject
     }
     try:
-        response = requests.post(f"{API_URL}/profile/nominate/{nomination_id}/follow-up", json=payload, headers=headers)
+        response = api_http.post(f"{API_URL}/profile/nominate/{nomination_id}/follow-up", json=payload, headers=headers)
         if response.status_code == 200:
             return True, response.json()
         else:
@@ -689,7 +757,7 @@ def api_evaluate_profile(profile_url):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     payload = {"profile_url": profile_url}
     try:
-        response = requests.post(f"{API_URL}/profile/evaluate", json=payload, headers=headers)
+        response = api_http.post(f"{API_URL}/profile/evaluate", json=payload, headers=headers)
         if response.status_code == 200:
             return True, response.json()
         else:
@@ -704,7 +772,7 @@ def api_search_orcid(query, country):
     if country:
         params["country"] = country
     try:
-        response = requests.get(f"{API_URL}/orcid/search", params=params, headers=headers)
+        response = api_http.get(f"{API_URL}/orcid/search", params=params, headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -717,7 +785,7 @@ def api_search_github(query, country):
     if country:
         params["country"] = country
     try:
-        response = requests.get(f"{API_URL}/github/search", params=params, headers=headers)
+        response = api_http.get(f"{API_URL}/github/search", params=params, headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -730,7 +798,7 @@ def api_search_linkedin(query, country):
     if country:
         params["country"] = country
     try:
-        response = requests.get(f"{API_URL}/linkedin/search", params=params, headers=headers)
+        response = api_http.get(f"{API_URL}/linkedin/search", params=params, headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -888,7 +956,7 @@ def generate_app_linkedin_outreach_templates(
 def api_update_profile(profile_data):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.put(f"{API_URL}/profile", json=profile_data, headers=headers)
+        response = api_http.put(f"{API_URL}/profile", json=profile_data, headers=headers)
         if response.status_code == 200:
             st.session_state['profile'] = response.json()
             return True, "Profile updated successfully!"
@@ -901,7 +969,7 @@ def api_update_profile(profile_data):
 def api_get_matches():
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/matches", headers=headers)
+        response = api_http.get(f"{API_URL}/matches", headers=headers)
         if response.status_code == 200:
             return response.json()
         else:
@@ -917,7 +985,7 @@ def api_match_action(match_id, action, availability_note=None):
         payload = {"match_id": match_id, "action": action}
         if availability_note:
             payload["availability_note"] = availability_note
-        response = requests.post(f"{API_URL}/matches/action", json=payload, headers=headers)
+        response = api_http.post(f"{API_URL}/matches/action", json=payload, headers=headers)
         return response.status_code == 200
     except Exception as e:
         st.error(f"API Connection Error: {e}")
@@ -926,7 +994,7 @@ def api_match_action(match_id, action, availability_note=None):
 def api_mark_match_notified(match_id):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.post(f"{API_URL}/matches/{match_id}/notify-seen", headers=headers)
+        response = api_http.post(f"{API_URL}/matches/{match_id}/notify-seen", headers=headers)
         return response.status_code == 200
     except Exception:
         return False
@@ -934,7 +1002,7 @@ def api_mark_match_notified(match_id):
 def api_get_match_history():
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/matches/history", headers=headers)
+        response = api_http.get(f"{API_URL}/matches/history", headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -946,7 +1014,7 @@ def api_upload_cv(file_bytes, filename):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     files = {"file": (filename, file_bytes, "application/pdf")}
     try:
-        response = requests.post(f"{API_URL}/profile/cv", headers=headers, files=files)
+        response = api_http.post(f"{API_URL}/profile/cv", headers=headers, files=files)
         if response.status_code == 200:
             return True, "CV uploaded successfully!"
         else:
@@ -957,7 +1025,7 @@ def api_upload_cv(file_bytes, filename):
 
 def api_get_cv(user_id):
     try:
-        response = requests.get(f"{API_URL}/profile/cv/{user_id}")
+        response = api_http.get(f"{API_URL}/profile/cv/{user_id}")
         if response.status_code == 200:
             return response.content
         return None
@@ -974,7 +1042,7 @@ def api_upload_profile_pic(file_bytes, filename):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     files = {"file": (filename, file_bytes, "image/png")}
     try:
-        response = requests.post(f"{API_URL}/profile/profile-pic", headers=headers, files=files)
+        response = api_http.post(f"{API_URL}/profile/profile-pic", headers=headers, files=files)
         if response.status_code == 200:
             return True, "Profile picture uploaded successfully!"
         else:
@@ -985,7 +1053,7 @@ def api_upload_profile_pic(file_bytes, filename):
 
 def api_get_profile_pic(user_id):
     try:
-        response = requests.get(f"{API_URL}/profile/profile-pic/{user_id}")
+        response = api_http.get(f"{API_URL}/profile/profile-pic/{user_id}")
         if response.status_code == 200:
             return response.content
         return None
@@ -995,7 +1063,7 @@ def api_get_profile_pic(user_id):
 def api_delete_profile_pic():
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.delete(f"{API_URL}/profile/profile-pic", headers=headers)
+        response = api_http.delete(f"{API_URL}/profile/profile-pic", headers=headers)
         if response.status_code == 200:
             return True, "Profile picture removed successfully!"
         else:
@@ -1007,7 +1075,7 @@ def api_delete_profile_pic():
 def api_reset_database():
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.post(f"{API_URL}/admin/reset", headers=headers)
+        response = api_http.post(f"{API_URL}/admin/reset", headers=headers)
         if response.status_code == 200:
             return True, response.json().get("message", "Database reset completed.")
         else:
@@ -1018,7 +1086,7 @@ def api_reset_database():
 
 def api_forgot_password(email: str):
     try:
-        response = requests.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
+        response = api_http.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
         if response.status_code == 200:
             return True, response.json()
         return False, response.json().get("detail", "Failed to initiate password reset.")
@@ -1032,7 +1100,7 @@ def api_reset_password(challenge_token: str, code: str, new_password: str):
             "code": code.strip(),
             "new_password": new_password
         }
-        response = requests.post(f"{API_URL}/auth/reset-password", json=payload)
+        response = api_http.post(f"{API_URL}/auth/reset-password", json=payload)
         if response.status_code == 200:
             return True, response.json().get("message", "Password reset successful!")
         return False, response.json().get("detail", "Failed to reset password.")
@@ -1042,7 +1110,7 @@ def api_reset_password(challenge_token: str, code: str, new_password: str):
 def api_get_messages(match_id: str):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/messages/{match_id}", headers=headers)
+        response = api_http.get(f"{API_URL}/messages/{match_id}", headers=headers)
         if response.status_code == 200:
             return response.json()
         return []
@@ -1052,7 +1120,7 @@ def api_get_messages(match_id: str):
 def api_send_message(match_id: str, content: str):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.post(
+        response = api_http.post(
             f"{API_URL}/messages/send",
             json={"match_id": match_id, "content": content.strip()},
             headers=headers
@@ -1068,7 +1136,7 @@ def api_get_unread_messages():
         return {"total_unread": 0, "by_match": {}}
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = requests.get(f"{API_URL}/messages/unread-summary", headers=headers)
+        response = api_http.get(f"{API_URL}/messages/unread-summary", headers=headers)
         if response.status_code == 200:
             return response.json()
         return {"total_unread": 0, "by_match": {}}

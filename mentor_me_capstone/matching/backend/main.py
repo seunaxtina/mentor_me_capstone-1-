@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -213,7 +213,11 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 @app.post("/api/v1/auth/token", response_model=schemas.TokenOrTwoFactorResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -240,17 +244,24 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             role=user.role,
             expires_minutes=5
         )
-        # Automatically dispatch 2FA code to user's email if SMTP is configured
-        auth.send_email_notification(
-            to_email=user.email,
-            subject="Your Mentor Me 2FA Verification Code",
-            body_text=f"Hello,\n\nYour 6-digit Double Authentication code is: {otp_code}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+        # Asynchronously dispatch 2FA email in background so login returns instantly without timing out
+        import threading
+        email_thread = threading.Thread(
+            target=auth.send_email_notification,
+            kwargs={
+                "to_email": user.email,
+                "subject": "Your Mentor Me 2FA Verification Code",
+                "body_text": f"Hello,\n\nYour 6-digit Double Authentication code is: {otp_code}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+            },
+            daemon=True
         )
+        email_thread.start()
+
         return schemas.TokenOrTwoFactorResponse(
             two_factor_required=True,
             challenge_token=challenge_token,
             email=user.email,
-            delivery_hint=f"A 6-digit security code has been sent for account {user.email}.",
+            delivery_hint=f"A 6-digit security code has been sent to {user.email}.",
             otp_code_preview=otp_code
         )
     

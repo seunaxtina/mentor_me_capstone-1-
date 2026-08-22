@@ -154,13 +154,26 @@ def verify_password_reset_challenge_token(challenge_token: str, submitted_code: 
 
 def send_email_notification(to_email: str, subject: str, body_text: str, body_html: str = None, reply_to: str = None) -> bool:
     """
-    Sends an email via SMTP if credentials exist in .env, otherwise logs for preview.
+    Sends an email via SMTP if credentials exist in .env / Railway Variables.
+    Automatically strips quotes and whitespace from environment variables.
     """
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM_EMAIL", smtp_user or "support@mentorme.app")
+    raw_host = os.getenv("SMTP_HOST")
+    smtp_host = raw_host.strip(' "\'') if raw_host else None
+    
+    raw_port = os.getenv("SMTP_PORT", "587")
+    try:
+        smtp_port = int(str(raw_port).strip(' "\''))
+    except Exception:
+        smtp_port = 587
+        
+    raw_user = os.getenv("SMTP_USER")
+    smtp_user = raw_user.strip(' "\'') if raw_user else None
+    
+    raw_pass = os.getenv("SMTP_PASSWORD")
+    smtp_password = raw_pass.strip(' "\'') if raw_pass else None
+    
+    raw_from = os.getenv("SMTP_FROM_EMAIL")
+    smtp_from = raw_from.strip(' "\'') if raw_from else (smtp_user or "support@mentorme.app")
 
     if smtp_host and smtp_user and smtp_password:
         try:
@@ -181,14 +194,17 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
                 part2 = MIMEText(body_html, "html")
                 msg.attach(part2)
 
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
                 server.starttls()
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, to_email, msg.as_string())
+            print(f"[SMTP SUCCESS] Verification email successfully sent to {to_email}")
             return True
         except Exception as e:
-            print(f"SMTP Dispatch Notice: {e}")
+            print(f"[SMTP ERROR] Failed to send email to {to_email}: {e}")
             return False
-    return False
+    else:
+        print(f"[SMTP NOTICE] Missing credentials. host={bool(smtp_host)}, user={bool(smtp_user)}, pass={bool(smtp_password)}")
+        return False
 
 

@@ -194,12 +194,40 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
                 part2 = MIMEText(body_html, "html")
                 msg.attach(part2)
 
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_from, to_email, msg.as_string())
-            print(f"[SMTP SUCCESS] Verification email successfully sent to {to_email}")
-            return True
+            # Try primary connection method based on port
+            sent = False
+            if smtp_port == 465:
+                try:
+                    with smtplib.SMTP_SSL(smtp_host, 465, timeout=10) as server:
+                        server.login(smtp_user, smtp_password)
+                        server.sendmail(smtp_from, to_email, msg.as_string())
+                    sent = True
+                except Exception as e_ssl:
+                    print(f"[SMTP SSL Notice]: {e_ssl}")
+            
+            if not sent:
+                # Default to STARTTLS on port 587
+                try:
+                    with smtplib.SMTP(smtp_host, smtp_port if smtp_port != 465 else 587, timeout=10) as server:
+                        server.starttls()
+                        server.login(smtp_user, smtp_password)
+                        server.sendmail(smtp_from, to_email, msg.as_string())
+                    sent = True
+                except Exception as e_tls:
+                    # Fallback to SSL on 465 if TLS failed
+                    try:
+                        with smtplib.SMTP_SSL(smtp_host, 465, timeout=10) as server_ssl:
+                            server_ssl.login(smtp_user, smtp_password)
+                            server_ssl.sendmail(smtp_from, to_email, msg.as_string())
+                        sent = True
+                    except Exception as e_fallback:
+                        print(f"[SMTP Fallback ERROR]: {e_fallback}")
+                        raise e_tls
+
+            if sent:
+                print(f"[SMTP SUCCESS] Verification email successfully sent to {to_email}")
+                return True
+            return False
         except Exception as e:
             print(f"[SMTP ERROR] Failed to send email to {to_email}: {e}")
             return False

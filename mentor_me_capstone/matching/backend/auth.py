@@ -194,15 +194,37 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
                 part2 = MIMEText(body_html, "html")
                 msg.attach(part2)
 
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_from, to_email, msg.as_string())
-            print(f"[SMTP SUCCESS] Verification code successfully emailed to {to_email}")
-            return True
+            sent = False
+            # Try Port 465 (Direct SSL) first - most reliable on cloud containers
+            try:
+                with smtplib.SMTP_SSL(smtp_host, 465, timeout=10) as server_ssl:
+                    server_ssl.login(smtp_user, smtp_password)
+                    server_ssl.sendmail(smtp_from, to_email, msg.as_string())
+                sent = True
+                print(f"[SMTP SUCCESS - SSL 465] Verification email successfully sent to {to_email}")
+                return True
+            except Exception as e_ssl:
+                print(f"[SMTP SSL 465 Notice]: {e_ssl}")
+
+            # Fallback to Port 587 (STARTTLS)
+            if not sent:
+                try:
+                    with smtplib.SMTP(smtp_host, 587, timeout=10) as server_tls:
+                        server_tls.starttls()
+                        server_tls.login(smtp_user, smtp_password)
+                        server_tls.sendmail(smtp_from, to_email, msg.as_string())
+                    sent = True
+                    print(f"[SMTP SUCCESS - TLS 587] Verification email successfully sent to {to_email}")
+                    return True
+                except Exception as e_tls:
+                    print(f"[SMTP TLS 587 Notice]: {e_tls}")
+
+            return False
         except Exception as e:
             print(f"[SMTP ERROR] Failed to send email to {to_email}: {e}")
             return False
-    return False
+    else:
+        print(f"[SMTP NOTICE] Missing credentials: host={bool(smtp_host)}, user={bool(smtp_user)}, pass={bool(smtp_password)}")
+        return False
 
 

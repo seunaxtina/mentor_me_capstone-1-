@@ -313,11 +313,18 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
         role=user.role,
         expires_minutes=5
     )
-    auth.send_email_notification(
-        to_email=user.email,
-        subject="Your New Mentor Me 2FA Verification Code",
-        body_text=f"Hello,\n\nYour new 6-digit Double Authentication code is: {new_otp}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+    import threading
+    email_thread = threading.Thread(
+        target=auth.send_email_notification,
+        kwargs={
+            "to_email": user.email,
+            "subject": "Your New Mentor Me 2FA Verification Code",
+            "body_text": f"Hello,\n\nYour new 6-digit Double Authentication code is: {new_otp}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+        },
+        daemon=True
     )
+    email_thread.start()
+
     return schemas.TokenOrTwoFactorResponse(
         two_factor_required=True,
         challenge_token=new_challenge,
@@ -325,6 +332,48 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
         delivery_hint=f"A new 6-digit security code has been generated.",
         otp_code_preview=new_otp
     )
+
+@app.get("/api/v1/auth/smtp-status")
+def smtp_diagnostic_status():
+    raw_host = os.getenv("SMTP_HOST")
+    raw_port = os.getenv("SMTP_PORT")
+    raw_user = os.getenv("SMTP_USER")
+    raw_pass = os.getenv("SMTP_PASSWORD")
+    
+    test_result = "Not attempted"
+    error_detail = None
+    if raw_host and raw_user and raw_pass:
+        try:
+            import smtplib
+            h = raw_host.strip(' "\'')
+            u = raw_user.strip(' "\'')
+            p = raw_pass.strip(' "\'')
+            try:
+                with smtplib.SMTP_SSL(h, 465, timeout=8) as s:
+                    s.login(u, p)
+                test_result = "SUCCESS (Port 465 SSL)"
+            except Exception as e_ssl:
+                try:
+                    with smtplib.SMTP(h, 587, timeout=8) as s:
+                        s.starttls()
+                        s.login(u, p)
+                    test_result = "SUCCESS (Port 587 TLS)"
+                except Exception as e_tls:
+                    test_result = f"FAILED: SSL={e_ssl} | TLS={e_tls}"
+                    error_detail = str(e_tls)
+        except Exception as e:
+            test_result = "FAILED"
+            error_detail = str(e)
+            
+    return {
+        "configured": bool(raw_host and raw_user and raw_pass),
+        "host": raw_host,
+        "port": raw_port,
+        "user_preview": (raw_user[:3] + "***@" + raw_user.split("@")[-1]) if raw_user and "@" in raw_user else raw_user,
+        "pass_length": len(raw_pass) if raw_pass else 0,
+        "connection_test": test_result,
+        "error_detail": error_detail
+    }
 
 @app.post("/api/v1/auth/2fa/toggle")
 def toggle_two_factor(

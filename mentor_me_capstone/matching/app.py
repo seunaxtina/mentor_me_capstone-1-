@@ -2003,70 +2003,70 @@ if st.session_state['access_token'] is None:
             del st.session_state['sso_error']
             st.rerun()
             
-    st.markdown("""
-        <div style="margin-bottom: 22px;">
-            <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentor Me</h2>
-            <p style="margin: 0; color: #64748b; font-size: 0.95rem;">Empowering equitable mentorship and career acceleration.</p>
-        </div>
-    """, unsafe_allow_html=True)
-    tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Create Account"])
-    
-    with tab1:
-        if st.session_state.get('two_factor_challenge'):
-            # Step 2: Double Authentication (2FA) / Email Verification
-            is_signup = st.session_state.get('two_factor_is_signup', False)
-            header_title = "Account Verification" if is_signup else "Double Authentication"
-            header_sub = "Step 2 of 2: Verify your email to activate your account" if is_signup else "Step 2 of 2: Security Verification"
-            st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 18px; color: white; margin-bottom: 16px;">
-                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
-                        <span style="font-size: 1.6rem;">🔐</span>
-                        <div>
-                            <h4 style="margin: 0; color: white; font-weight: 700; font-size: 1.15rem;">{header_title}</h4>
-                            <span style="font-size: 0.82rem; color: #94a3b8;">{header_sub}</span>
-                        </div>
+    if st.session_state.get('two_factor_challenge'):
+        # Step 2: Double Authentication (2FA) / Email Verification
+        is_signup = st.session_state.get('two_factor_is_signup', False)
+        header_title = "Verify Your Email to Activate Account" if is_signup else "Double Authentication"
+        header_sub = "Step 2 of 2: Security Verification"
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 20px; color: white; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                    <span style="font-size: 1.8rem;">🔐</span>
+                    <div>
+                        <h3 style="margin: 0; color: white; font-weight: 700; font-size: 1.25rem;">{header_title}</h3>
+                        <span style="font-size: 0.85rem; color: #94a3b8;">{header_sub}</span>
                     </div>
-                    <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0;">
-                        Enter the 6-digit verification code to securely access your account.
-                    </p>
                 </div>
-            """, unsafe_allow_html=True)
-            
-            target_email = st.session_state.get('two_factor_email', 'your account')
-            st.caption(f"✉️ Verification destination: **{target_email}** (Code expires in 5 minutes)")
-            
-            with st.form("two_factor_verify_form"):
-                code_input = st.text_input("6-Digit Security Code", max_chars=6, placeholder="e.g. 123456", help="Enter the 6-digit numeric verification code")
-                btn_label = "🚀 Verify & Activate Account" if is_signup else "🚀 Verify & Complete Sign In"
-                verify_submit = st.form_submit_button(btn_label, type="primary", use_container_width=True)
-                if verify_submit:
-                    if not code_input or len(code_input.strip()) < 6:
-                        st.error("Please enter a valid 6-digit security code.")
-                    else:
-                        v_ok, v_msg = api_verify_2fa(code_input.strip())
-                        if v_ok:
-                            st.success(v_msg)
-                            st.session_state['two_factor_is_signup'] = False
-                            st.rerun()
-                        else:
-                            st.error(v_msg)
-                            
-            col_resend, col_back = st.columns([1, 1])
-            with col_resend:
-                if st.button("🔄 Resend Code", key="resend_2fa_btn", use_container_width=True):
-                    r_ok, r_msg = api_resend_2fa()
-                    if r_ok:
-                        st.success(r_msg)
+                <p style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 0;">
+                    We sent a 6-digit verification code to your email. Enter it below to activate your account and proceed directly to your dashboard.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        target_email = st.session_state.get('two_factor_email', 'your account')
+        st.caption(f"✉️ Verification destination: **{target_email}** (Code expires in 5 minutes)")
+        
+        with st.form("two_factor_verify_form"):
+            code_input = st.text_input("6-Digit Security Code", max_chars=6, placeholder="e.g. 123456", help="Enter the 6-digit numeric verification code received in your email")
+            btn_label = "🚀 Verify & Enter Dashboard" if is_signup else "🚀 Verify & Complete Sign In"
+            verify_submit = st.form_submit_button(btn_label, type="primary", use_container_width=True)
+            if verify_submit:
+                if not code_input or len(code_input.strip()) < 6:
+                    st.error("Please enter a valid 6-digit security code.")
+                else:
+                    v_ok, v_msg = api_verify_2fa(code_input.strip())
+                    if v_ok:
+                        st.success(v_msg)
+                        st.session_state['two_factor_is_signup'] = False
                         st.rerun()
                     else:
-                        st.error(r_msg)
-            with col_back:
-                if st.button("← Back to Sign In / Sign Up", key="cancel_2fa_btn", use_container_width=True):
-                    st.session_state['two_factor_challenge'] = None
-                    st.session_state['two_factor_preview'] = None
-                    st.session_state['two_factor_is_signup'] = False
+                        st.error(v_msg)
+                        
+        col_resend, col_back = st.columns([1, 1])
+        with col_resend:
+            if st.button("🔄 Resend Code", key="resend_2fa_btn", use_container_width=True):
+                r_ok, r_msg = api_resend_2fa()
+                if r_ok:
+                    st.success(r_msg)
                     st.rerun()
-        else:
+                else:
+                    st.error(r_msg)
+        with col_back:
+            if st.button("← Back to Sign In / Sign Up", key="cancel_2fa_btn", use_container_width=True):
+                st.session_state['two_factor_challenge'] = None
+                st.session_state['two_factor_preview'] = None
+                st.session_state['two_factor_is_signup'] = False
+                st.rerun()
+    else:
+        st.markdown("""
+            <div style="margin-bottom: 22px;">
+                <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentor Me</h2>
+                <p style="margin: 0; color: #64748b; font-size: 0.95rem;">Empowering equitable mentorship and career acceleration.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Create Account"])
+        
+        with tab1:
             # Step 1: Primary Credentials
             with st.form("login_form"):
                 email = st.text_input("Email", placeholder="e.g. user_90001@mentorme.demo or admin@mentorme.demo")
@@ -2155,7 +2155,8 @@ if st.session_state['access_token'] is None:
             confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
             role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
             role = st.selectbox("I am signing up as a:", role_options)
-            submit = st.form_submit_button("Create Account")
+            st.caption("🔒 *A 6-digit verification code will be sent to your email to verify and activate your account.*")
+            submit = st.form_submit_button("🚀 Create Account & Verify Email", type="primary", use_container_width=True)
             if submit:
                 if len(new_password) < 8:
                     st.error("Password must be at least 8 characters long.")

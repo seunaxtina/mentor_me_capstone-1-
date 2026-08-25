@@ -2144,48 +2144,48 @@ if st.session_state['access_token'] is None:
                                 else:
                                     st.error(fp_res)
                     
-    with tab2:
-        invite = st.session_state.get('invite_code')
-        if invite:
-            st.info(f"✨ **Applying Invite Code:** `{invite}`. You will be automatically connected to your nominating mentee upon signup!")
-            
-        with st.form("signup_form"):
-            new_email = st.text_input("Email", placeholder="e.g. Jane.Doe@example.com")
-            new_password = st.text_input("Password", type="password", placeholder="Minimum 8 characters")
-            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
-            role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
-            role = st.selectbox("I am signing up as a:", role_options)
-            st.caption("🔒 *A 6-digit verification code will be sent to your email to verify and activate your account.*")
-            submit = st.form_submit_button("🚀 Create Account & Verify Email", type="primary", use_container_width=True)
-            if submit:
-                if len(new_password) < 8:
-                    st.error("Password must be at least 8 characters long.")
-                elif new_password != confirm_password:
-                    st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
-                else:
-                    status_res, msg = api_signup(new_email, new_password, role, invite)
-                    if status_res == "2FA_REQUIRED":
-                        st.info(msg)
-                        st.session_state['invite_code'] = None
-                        st.rerun()
-                    elif status_res is True:
-                        st.success(msg)
-                        st.session_state['invite_code'] = None
+        with tab2:
+            invite = st.session_state.get('invite_code')
+            if invite:
+                st.info(f"✨ **Applying Invite Code:** `{invite}`. You will be automatically connected to your nominating mentee upon signup!")
+                
+            with st.form("signup_form"):
+                new_email = st.text_input("Email", placeholder="e.g. Jane.Doe@example.com")
+                new_password = st.text_input("Password", type="password", placeholder="Minimum 8 characters")
+                confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
+                role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
+                role = st.selectbox("I am signing up as a:", role_options)
+                st.caption("🔒 *A 6-digit verification code will be sent to your email to verify and activate your account.*")
+                submit = st.form_submit_button("🚀 Create Account & Verify Email", type="primary", use_container_width=True)
+                if submit:
+                    if len(new_password) < 8:
+                        st.error("Password must be at least 8 characters long.")
+                    elif new_password != confirm_password:
+                        st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
                     else:
-                        st.error(msg)
-                        
-        # Social Registration Options with Mentee / Mentor choice
-        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-        default_idx = 1 if invite else 0
-        signup_role_choice = st.radio(
-            "Register with Google as:",
-            options=["🌱 Mentee (seeking guidance)", "🧭 Mentor (sharing expertise)"],
-            index=default_idx,
-            horizontal=True,
-            key="social_signup_role_radio"
-        )
-        s_role = "MENTOR" if "Mentor" in signup_role_choice else "MENTEE"
-        render_sso_gateway_section(default_role=s_role, mode="signup", key_suffix="signup")
+                        status_res, msg = api_signup(new_email, new_password, role, invite)
+                        if status_res == "2FA_REQUIRED":
+                            st.info(msg)
+                            st.session_state['invite_code'] = None
+                            st.rerun()
+                        elif status_res is True:
+                            st.success(msg)
+                            st.session_state['invite_code'] = None
+                        else:
+                            st.error(msg)
+                            
+            # Social Registration Options with Mentee / Mentor choice
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            default_idx = 1 if invite else 0
+            signup_role_choice = st.radio(
+                "Register with Google as:",
+                options=["🌱 Mentee (seeking guidance)", "🧭 Mentor (sharing expertise)"],
+                index=default_idx,
+                horizontal=True,
+                key="social_signup_role_radio"
+            )
+            s_role = "MENTOR" if "Mentor" in signup_role_choice else "MENTEE"
+            render_sso_gateway_section(default_role=s_role, mode="signup", key_suffix="signup")
 else:
     profile = st.session_state['profile']
     if not profile:

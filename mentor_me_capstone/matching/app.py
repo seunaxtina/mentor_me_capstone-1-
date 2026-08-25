@@ -735,16 +735,15 @@ def api_signup(email, password, role, invite_code=None):
             payload["invite_code"] = invite_code
         response = api_http.post(f"{API_URL}/auth/signup", json=payload)
         
-        # --- Added 2FA check logic here ---
         if response.status_code in (200, 201):
             data = response.json()
             if data.get("two_factor_required"):
-                st.session_state["2fa_challenge_token"] = data.get("challenge_token")
-                st.session_state["2fa_email"] = data.get("email")
-                st.session_state["2fa_is_signup"] = True
-                st.session_state["2fa_delivery_hint"] = data.get("delivery_hint")
-                st.success("Account registered! Please enter the 6-digit code sent to your email.")
-                st.rerun()
+                st.session_state['two_factor_challenge'] = data.get("challenge_token")
+                st.session_state['two_factor_email'] = data.get("email", email)
+                st.session_state['two_factor_hint'] = data.get("delivery_hint", "Enter your 6-digit verification code.")
+                st.session_state['two_factor_preview'] = data.get("otp_code_preview")
+                st.session_state['two_factor_is_signup'] = True
+                return "2FA_REQUIRED", data.get("delivery_hint", "Account registered! Please enter the 6-digit verification code sent to your email.")
             else:
                 return True, "Account created successfully! Please log in."
         else:
@@ -2014,14 +2013,17 @@ if st.session_state['access_token'] is None:
     
     with tab1:
         if st.session_state.get('two_factor_challenge'):
-            # Step 2: Double Authentication (2FA)
-            st.markdown("""
+            # Step 2: Double Authentication (2FA) / Email Verification
+            is_signup = st.session_state.get('two_factor_is_signup', False)
+            header_title = "Account Verification" if is_signup else "Double Authentication"
+            header_sub = "Step 2 of 2: Verify your email to activate your account" if is_signup else "Step 2 of 2: Security Verification"
+            st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 18px; color: white; margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
                         <span style="font-size: 1.6rem;">🔐</span>
                         <div>
-                            <h4 style="margin: 0; color: white; font-weight: 700; font-size: 1.15rem;">Double Authentication</h4>
-                            <span style="font-size: 0.82rem; color: #94a3b8;">Step 2 of 2: Security Verification</span>
+                            <h4 style="margin: 0; color: white; font-weight: 700; font-size: 1.15rem;">{header_title}</h4>
+                            <span style="font-size: 0.82rem; color: #94a3b8;">{header_sub}</span>
                         </div>
                     </div>
                     <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0;">
@@ -2035,7 +2037,8 @@ if st.session_state['access_token'] is None:
             
             with st.form("two_factor_verify_form"):
                 code_input = st.text_input("6-Digit Security Code", max_chars=6, placeholder="e.g. 123456", help="Enter the 6-digit numeric verification code")
-                verify_submit = st.form_submit_button("🚀 Verify & Complete Sign In", type="primary", use_container_width=True)
+                btn_label = "🚀 Verify & Activate Account" if is_signup else "🚀 Verify & Complete Sign In"
+                verify_submit = st.form_submit_button(btn_label, type="primary", use_container_width=True)
                 if verify_submit:
                     if not code_input or len(code_input.strip()) < 6:
                         st.error("Please enter a valid 6-digit security code.")
@@ -2043,6 +2046,7 @@ if st.session_state['access_token'] is None:
                         v_ok, v_msg = api_verify_2fa(code_input.strip())
                         if v_ok:
                             st.success(v_msg)
+                            st.session_state['two_factor_is_signup'] = False
                             st.rerun()
                         else:
                             st.error(v_msg)
@@ -2057,9 +2061,10 @@ if st.session_state['access_token'] is None:
                     else:
                         st.error(r_msg)
             with col_back:
-                if st.button("← Back to Sign In", key="cancel_2fa_btn", use_container_width=True):
+                if st.button("← Back to Sign In / Sign Up", key="cancel_2fa_btn", use_container_width=True):
                     st.session_state['two_factor_challenge'] = None
                     st.session_state['two_factor_preview'] = None
+                    st.session_state['two_factor_is_signup'] = False
                     st.rerun()
         else:
             # Step 1: Primary Credentials
@@ -2157,8 +2162,12 @@ if st.session_state['access_token'] is None:
                 elif new_password != confirm_password:
                     st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
                 else:
-                    success, msg = api_signup(new_email, new_password, role, invite)
-                    if success:
+                    status_res, msg = api_signup(new_email, new_password, role, invite)
+                    if status_res == "2FA_REQUIRED":
+                        st.info(msg)
+                        st.session_state['invite_code'] = None
+                        st.rerun()
+                    elif status_res is True:
                         st.success(msg)
                         st.session_state['invite_code'] = None
                     else:

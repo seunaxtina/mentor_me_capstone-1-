@@ -7,6 +7,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Synchronize Streamlit Cloud secrets into os.environ for backend & services
+try:
+    if hasattr(st, "secrets"):
+        for key, value in st.secrets.items():
+            if isinstance(value, (str, int, float, bool)):
+                os.environ[key] = str(value)
+except Exception:
+    pass
+
 # Robust sys.path configuration for cloud environments (Streamlit Cloud, Hugging Face, etc.)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:

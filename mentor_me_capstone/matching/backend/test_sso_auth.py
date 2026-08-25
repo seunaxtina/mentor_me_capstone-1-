@@ -138,20 +138,37 @@ def test_sso_auth_flow():
     assert "facebook" in fb_url_resp.json()["auth_url"].lower()
     print("PASS: Facebook OAuth redirection URL successfully generated.")
 
-    # 7. Test OAuth Redirection Callback endpoint
-    cb_resp = client.post(
-        "/api/v1/auth/sso/callback",
-        json={
-            "provider": "google",
-            "code": "4/0AbCdEf1234567890",
-            "redirect_uri": "http://localhost:8501",
-            "role": "MENTEE",
-            "mode": "signup"
+    # 7. Test OAuth Redirection Callback endpoint with mocked Google exchange
+    from unittest.mock import patch, MagicMock
+    with patch("requests.post") as mock_post, patch("requests.get") as mock_get:
+        mock_token_resp = MagicMock()
+        mock_token_resp.status_code = 200
+        mock_token_resp.json.return_value = {"access_token": "mock_google_access_token"}
+        mock_post.return_value = mock_token_resp
+
+        mock_userinfo_resp = MagicMock()
+        mock_userinfo_resp.status_code = 200
+        mock_userinfo_resp.json.return_value = {
+            "email": "cb_user_123@gmail.com",
+            "name": "Callback User",
+            "picture": "https://lh3.googleusercontent.com/mock",
+            "sub": "google_cb_123"
         }
-    )
-    assert cb_resp.status_code == 200
-    assert "access_token" in cb_resp.json()
-    print("PASS: OAuth Callback exchange successfully issued JWT token without manual inputs.")
+        mock_get.return_value = mock_userinfo_resp
+
+        cb_resp = client.post(
+            "/api/v1/auth/sso/callback",
+            json={
+                "provider": "google",
+                "code": "4/0AbCdEf1234567890",
+                "redirect_uri": "http://localhost:8501",
+                "role": "MENTEE",
+                "mode": "signup"
+            }
+        )
+        assert cb_resp.status_code == 200
+        assert "access_token" in cb_resp.json()
+        print("PASS: OAuth Callback exchange successfully issued JWT token without manual inputs.")
 
     # 8. Test Invalid Provider Error Handling
     bad_sso = client.post(

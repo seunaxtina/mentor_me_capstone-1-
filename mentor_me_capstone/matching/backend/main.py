@@ -866,10 +866,10 @@ def get_sso_authorize_url(provider: str, redirect_uri: str = None, role: str = "
             url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
             return schemas.SSOAuthUrlResponse(provider="google", auth_url=url, is_live_oauth=True)
         else:
-            params = {"sso_provider": "google", "role": role, "mode": mode}
-            if invite_code: params["invite_code"] = invite_code
-            url = f"{redirect_uri}?{urllib.parse.urlencode(params)}"
-            return schemas.SSOAuthUrlResponse(provider="google", auth_url=url, is_live_oauth=False)
+            raise HTTPException(
+                status_code=400,
+                detail="Google OAuth is not configured on this backend. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in environment variables."
+            )
             
     elif provider == "facebook":
         if facebook_app_id and "your_" not in facebook_app_id:
@@ -918,13 +918,29 @@ def sso_callback(req: schemas.SSOCallbackRequest, db: Session = Depends(get_db))
             if token_resp.status_code == 200:
                 t_data = token_resp.json()
                 access_tok = t_data.get("access_token")
-                userinfo = _req.get("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_tok}"}, verify=False, timeout=5).json()
-                email = userinfo.get("email")
-                name = userinfo.get("name")
-                picture = userinfo.get("picture")
-                oauth_id = userinfo.get("sub")
+                userinfo_resp = _req.get("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {access_tok}"}, verify=False, timeout=5)
+                if userinfo_resp.status_code == 200:
+                    userinfo = userinfo_resp.json()
+                    email = userinfo.get("email")
+                    name = userinfo.get("name")
+                    picture = userinfo.get("picture")
+                    oauth_id = userinfo.get("sub")
+            else:
+                err_data = token_resp.json() if "application/json" in token_resp.headers.get("content-type", "") else {"error": token_resp.text}
+                err_desc = err_data.get("error_description") or err_data.get("error") or token_resp.text
+                print(f"[GOOGLE SSO ERROR] Google token exchange returned {token_resp.status_code}: {err_desc}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Google authentication failed: {err_desc}"
+                )
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"Google Token Exchange Error: {e}")
+            print(f"Google Token Exchange Exception: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Google authentication error: {str(e)}"
+            )
             
     elif provider == "facebook" and facebook_app_secret:
         try:

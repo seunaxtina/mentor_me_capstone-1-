@@ -539,6 +539,21 @@ def fetch_profile():
         st.session_state['access_token'] = None
         st.session_state['profile'] = None
 
+def get_frontend_base_url():
+    explicit = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
+    if explicit and "localhost" not in explicit:
+        return explicit.rstrip("/")
+    try:
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            host = headers.get("host") or headers.get("Host") or headers.get("x-forwarded-host")
+            proto = headers.get("x-forwarded-proto", "https")
+            if host:
+                return f"{proto}://{host}".rstrip("/")
+    except Exception:
+        pass
+    return (explicit or "http://localhost:8501").rstrip("/")
+
 # Capture invite code from URL parameters if present
 if "invite_code" in st.query_params:
     st.session_state['invite_code'] = st.query_params["invite_code"]
@@ -566,14 +581,14 @@ if "code" in st.query_params:
         _inv = st.query_params.get("invite_code")
         
     try:
-        frontend_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
+        frontend_base = get_frontend_base_url()
         payload = {
             "provider": _prov,
             "code": _auth_code,
             "role": _role,
             "mode": _mode,
             "invite_code": _inv,
-            "redirect_uri": frontend_base.rstrip("/") if frontend_base else None
+            "redirect_uri": frontend_base
         }
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
@@ -588,41 +603,6 @@ if "code" in st.query_params:
         st.session_state['sso_error'] = f"Google Connection Error: {e}"
         
     for k in ["code", "provider", "role", "mode", "state", "invite_code", "scope", "authuser", "prompt", "hd"]:
-        if k in st.query_params:
-            del st.query_params[k]
-    st.rerun()
-
-elif "sso_provider" in st.query_params:
-    _prov = st.query_params.get("sso_provider")
-    _role = st.query_params.get("role", "MENTEE")
-    _mode = st.query_params.get("mode", "signin")
-    _inv = st.query_params.get("invite_code")
-    demo_email = f"alex.{_prov}@example.com"
-    demo_name = f"Alex ({_prov.capitalize()} User)"
-    demo_pic = f"https://api.dicebear.com/7.x/bottts/svg?seed={_prov}"
-    try:
-        payload = {
-            "provider": _prov,
-            "email": demo_email,
-            "name": demo_name,
-            "picture": demo_pic,
-            "role": _role,
-            "mode": _mode,
-            "invite_code": _inv
-        }
-        resp = api_http.post(f"{API_URL}/auth/sso", json=payload)
-        if resp.status_code == 200:
-            st.session_state['access_token'] = resp.json()['access_token']
-            st.session_state['two_factor_challenge'] = None
-            st.session_state['sso_error'] = None
-            fetch_profile()
-        else:
-            err_msg = resp.json().get('detail', 'Authentication failed.')
-            st.session_state['sso_error'] = err_msg
-    except Exception as e:
-        st.session_state['sso_error'] = f"Connection error: {e}"
-        
-    for k in ["sso_provider", "role", "mode", "invite_code"]:
         if k in st.query_params:
             del st.query_params[k]
     st.rerun()
@@ -726,18 +706,16 @@ def api_sso_authenticate(provider: str, email: str, name: str = None, picture: s
 
 def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", invite_code: str = None):
     try:
-        frontend_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
-        params = {"provider": provider, "role": role, "mode": mode}
-        if frontend_base:
-            params["redirect_uri"] = frontend_base.rstrip("/")
+        frontend_base = get_frontend_base_url()
+        params = {"provider": provider, "role": role, "mode": mode, "redirect_uri": frontend_base}
         if invite_code:
             params["invite_code"] = invite_code
         response = api_http.get(f"{API_URL}/auth/sso/authorize-url", params=params)
         if response.status_code == 200:
             return response.json().get("auth_url")
-        return f"/?sso_provider={provider}&role={role}&mode={mode}"
+        return None
     except Exception:
-        return f"/?sso_provider={provider}&role={role}&mode={mode}"
+        return None
 
 def api_signup(email, password, role, invite_code=None):
     try:
@@ -2004,7 +1982,11 @@ def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix=
     """, unsafe_allow_html=True)
     
     btn_label = "🌐 Continue with Google" if mode == "signin" else f"🌐 Register as {clean_role.capitalize()} with Google"
-    st.link_button(btn_label, google_url, use_container_width=True)
+    if google_url and "accounts.google.com" in google_url:
+        st.link_button(btn_label, google_url, use_container_width=True)
+    else:
+        if st.button(btn_label, key=f"disabled_sso_btn_{key_suffix}", use_container_width=True):
+            st.warning("⚠️ Google OAuth is not configured on this server. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are added to your Railway backend variables.")
 
 # Application Views
 if st.session_state['access_token'] is None:

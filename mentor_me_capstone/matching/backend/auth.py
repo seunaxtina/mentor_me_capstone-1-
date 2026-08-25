@@ -38,6 +38,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+def verify_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired token: {e}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
     credentials_exception = HTTPException(
@@ -55,9 +65,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         print(f"JWT VALIDATION FAIL (PyJWTError): {e}")
         raise credentials_exception
         
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter((models.User.id == user_id) | (models.User.email == user_id)).first()
     if user is None:
-        print(f"JWT VALIDATION FAIL: User with ID {user_id} not found in database")
+        print(f"JWT VALIDATION FAIL: User with ID or Email {user_id} not found in database")
         raise credentials_exception
     return user
 

@@ -80,6 +80,7 @@ class TokenOrTwoFactorResponse(BaseModel):
     access_token: Optional[str] = None
     token_type: Optional[str] = None
     two_factor_required: bool = False
+    two_factor_enabled: Optional[bool] = True
     challenge_token: Optional[str] = None
     email: Optional[str] = None
     delivery_hint: Optional[str] = None

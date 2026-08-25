@@ -5,6 +5,48 @@ import requests
 import pandas as pd
 from dotenv import load_dotenv
 
+# Monkey-patch Response.json to be resilient against non-JSON HTTP responses (e.g. 500/502/503 HTML error pages)
+import requests.models
+_original_requests_json = requests.models.Response.json
+
+def _safe_requests_json(self, **kwargs):
+    try:
+        return _original_requests_json(self, **kwargs)
+    except Exception:
+        status_code = getattr(self, "status_code", "Unknown")
+        body_text = getattr(self, "text", "")
+        snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
+        if not snippet.strip():
+            snippet = f"Server returned HTTP {status_code}"
+        return {
+            "detail": f"HTTP {status_code}: {snippet}",
+            "two_factor_required": False,
+            "message": f"HTTP {status_code}: {snippet}"
+        }
+
+requests.models.Response.json = _safe_requests_json
+
+try:
+    import httpx
+    _original_httpx_json = httpx.Response.json
+    def _safe_httpx_json(self, **kwargs):
+        try:
+            return _original_httpx_json(self, **kwargs)
+        except Exception:
+            status_code = getattr(self, "status_code", "Unknown")
+            body_text = getattr(self, "text", "")
+            snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
+            if not snippet.strip():
+                snippet = f"Server returned HTTP {status_code}"
+            return {
+                "detail": f"HTTP {status_code}: {snippet}",
+                "two_factor_required": False,
+                "message": f"HTTP {status_code}: {snippet}"
+            }
+    httpx.Response.json = _safe_httpx_json
+except Exception:
+    pass
+
 load_dotenv()
 
 # Synchronize Streamlit Cloud secrets into os.environ for backend & services

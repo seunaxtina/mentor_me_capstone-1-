@@ -7,10 +7,10 @@ from .database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    name = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=True)
     role = Column(String, default="mentee")  # 'mentee', 'mentor', 'admin'
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
@@ -19,7 +19,16 @@ class User(Base):
     otp_expiry = Column(DateTime, nullable=True)
     otp_failed_attempts = Column(Integer, default=0)
     otp_last_sent_at = Column(DateTime, nullable=True)
+    auth_provider = Column(String, default="LOCAL")
+    oauth_id = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
+    two_factor_secret = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    # Relationships
+    mentee_profile = relationship("Mentee", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    mentor_profile = relationship("Mentor", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class Mentee(Base):

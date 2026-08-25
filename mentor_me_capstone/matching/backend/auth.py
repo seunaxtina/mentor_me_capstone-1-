@@ -152,11 +152,79 @@ def verify_password_reset_challenge_token(challenge_token: str, submitted_code: 
         raise credentials_exception
 
 
+def send_email_via_resend(to_email: str, subject: str, body_text: str, body_html: str = None) -> bool:
+    """
+    Sends an email using the Resend REST API (HTTPS on port 443).
+    Bypasses SMTP port blocking on cloud hosts like Railway.
+    """
+    raw_key = os.getenv("RESEND_API_KEY")
+    if not raw_key:
+        return False
+    resend_api_key = raw_key.strip(' "\'')
+    if not resend_api_key:
+        return False
+
+    raw_from = os.getenv("RESEND_FROM_EMAIL") or os.getenv("SMTP_FROM_EMAIL")
+    custom_from = raw_from.strip(' "\'') if raw_from else None
+
+    # Resend requires a verified domain for custom senders.
+    # Public domains (@gmail.com, @yahoo.com) cannot be verified, so we use onboarding@resend.dev.
+    from_candidates = []
+    if custom_from:
+        lower_from = custom_from.lower()
+        if any(dom in lower_from for dom in ["@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@icloud.com"]):
+            from_candidates.append("MentorMe <onboarding@resend.dev>")
+        else:
+            from_candidates.append(f"MentorMe <{custom_from}>" if "<" not in custom_from else custom_from)
+            from_candidates.append("MentorMe <onboarding@resend.dev>")
+    else:
+        from_candidates.append("MentorMe <onboarding@resend.dev>")
+
+    html_content = body_html or f"<div style='font-family: Arial, sans-serif; font-size: 15px; color: #333; line-height: 1.6;'>{body_text.replace(chr(10), '<br>')}</div>"
+
+    headers = {
+        "Authorization": f"Bearer {resend_api_key}",
+        "Content-Type": "application/json"
+    }
+
+    import requests
+    for from_addr in from_candidates:
+        payload = {
+            "from": from_addr,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+            "text": body_text
+        }
+        try:
+            try:
+                res = requests.post("https://api.resend.com/emails", headers=headers, json=payload, timeout=10)
+            except requests.exceptions.SSLError:
+                res = requests.post("https://api.resend.com/emails", headers=headers, json=payload, verify=False, timeout=10)
+
+            if res.status_code in (200, 201):
+                print(f"[RESEND SUCCESS] Verification email successfully sent to {to_email} via Resend (from: {from_addr})")
+                return True
+            else:
+                print(f"[RESEND NOTICE] Attempt with {from_addr} returned {res.status_code}: {res.text}")
+        except Exception as e:
+            print(f"[RESEND ERROR] Failed to send via Resend using {from_addr}: {e}")
+
+    return False
+
+
 def send_email_notification(to_email: str, subject: str, body_text: str, body_html: str = None, reply_to: str = None) -> bool:
     """
-    Sends an email via SMTP if credentials exist in .env or Railway Variables.
+    Sends an email via Resend API (HTTPS) or SMTP fallback.
     Automatically cleans quotes and whitespace from environment variables.
     """
+    # 1. Try Resend API (HTTPS Port 443) first - Works everywhere including Railway
+    if os.getenv("RESEND_API_KEY"):
+        if send_email_via_resend(to_email, subject, body_text, body_html):
+            return True
+        print("[EMAIL DISPATCH] Resend failed or was rejected, attempting SMTP fallback...")
+
+    # 2. Fallback to SMTP
     raw_host = os.getenv("SMTP_HOST")
     smtp_host = raw_host.strip(' "\'') if raw_host else None
 

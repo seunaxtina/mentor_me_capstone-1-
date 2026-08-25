@@ -333,8 +333,12 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
         otp_code_preview=new_otp
     )
 
+@app.get("/api/v1/auth/email-status")
 @app.get("/api/v1/auth/smtp-status")
-def smtp_diagnostic_status():
+def email_diagnostic_status():
+    raw_resend_key = os.getenv("RESEND_API_KEY")
+    resend_configured = bool(raw_resend_key and raw_resend_key.strip(' "\''))
+    
     raw_host = os.getenv("SMTP_HOST")
     raw_port = os.getenv("SMTP_PORT")
     raw_user = os.getenv("SMTP_USER")
@@ -342,6 +346,12 @@ def smtp_diagnostic_status():
     
     test_result = "Not attempted"
     error_detail = None
+
+    if resend_configured:
+        resend_status = "Configured (HTTPS Port 443 active)"
+    else:
+        resend_status = "Not configured"
+
     if raw_host and raw_user and raw_pass:
         try:
             import smtplib
@@ -366,13 +376,14 @@ def smtp_diagnostic_status():
             error_detail = str(e)
             
     return {
-        "configured": bool(raw_host and raw_user and raw_pass),
-        "host": raw_host,
-        "port": raw_port,
-        "user_preview": (raw_user[:3] + "***@" + raw_user.split("@")[-1]) if raw_user and "@" in raw_user else raw_user,
-        "pass_length": len(raw_pass) if raw_pass else 0,
-        "connection_test": test_result,
-        "error_detail": error_detail
+        "resend_active": resend_configured,
+        "resend_key_preview": (raw_resend_key.strip(' "\'')[:6] + "..." + raw_resend_key.strip(' "\'')[-4:]) if resend_configured else None,
+        "smtp_configured": bool(raw_host and raw_user and raw_pass),
+        "smtp_host": raw_host,
+        "smtp_port": raw_port,
+        "smtp_user_preview": (raw_user[:3] + "***@" + raw_user.split("@")[-1]) if raw_user and "@" in raw_user else raw_user,
+        "smtp_connection_test": test_result,
+        "smtp_error_detail": error_detail
     }
 
 @app.post("/api/v1/auth/2fa/toggle")

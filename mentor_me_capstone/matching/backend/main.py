@@ -678,23 +678,18 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
     
     if user:
         # Existing user: update provider info if not set
+        if not user.name and name:
+            user.name = name
         if not user.auth_provider or user.auth_provider == "LOCAL":
             user.auth_provider = provider.upper()
         if oauth_id and not user.oauth_id:
             user.oauth_id = oauth_id
         if picture and not user.avatar_url:
             user.avatar_url = picture
+        user.is_verified = True
         db.commit()
     else:
-        # Strict registration enforcement: block Sign-In if account doesn't exist
-        req_mode = getattr(req, "mode", "signin") or "signin"
-        if req_mode.lower() == "signin":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No Mentor Me account found for this Google address. Please create an account on the 'Create Account' tab first."
-            )
-            
-        # New user: Sign Up on Create Account tab
+        # Seamlessly auto-provision new SSO user
         is_new_user = True
         user_role = (req.role or "MENTEE").upper()
         if user_role not in ["MENTEE", "MENTOR"]:
@@ -703,8 +698,11 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
         dummy_hash = auth.get_password_hash(secrets.token_urlsafe(24))
         user = models.User(
             email=email,
+            name=name,
             password_hash=dummy_hash,
             role=user_role,
+            is_active=True,
+            is_verified=True,
             auth_provider=provider.upper(),
             oauth_id=oauth_id,
             avatar_url=picture,

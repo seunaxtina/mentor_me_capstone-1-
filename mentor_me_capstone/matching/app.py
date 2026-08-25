@@ -566,7 +566,15 @@ if "code" in st.query_params:
         _inv = st.query_params.get("invite_code")
         
     try:
-        payload = {"provider": _prov, "code": _auth_code, "role": _role, "mode": _mode, "invite_code": _inv}
+        frontend_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
+        payload = {
+            "provider": _prov,
+            "code": _auth_code,
+            "role": _role,
+            "mode": _mode,
+            "invite_code": _inv,
+            "redirect_uri": frontend_base.rstrip("/") if frontend_base else None
+        }
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
             st.session_state['access_token'] = resp.json()['access_token']
@@ -718,7 +726,10 @@ def api_sso_authenticate(provider: str, email: str, name: str = None, picture: s
 
 def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", invite_code: str = None):
     try:
+        frontend_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
         params = {"provider": provider, "role": role, "mode": mode}
+        if frontend_base:
+            params["redirect_uri"] = frontend_base.rstrip("/")
         if invite_code:
             params["invite_code"] = invite_code
         response = api_http.get(f"{API_URL}/auth/sso/authorize-url", params=params)

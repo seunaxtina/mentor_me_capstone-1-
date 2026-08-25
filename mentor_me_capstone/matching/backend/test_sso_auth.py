@@ -18,7 +18,7 @@ client = TestClient(app)
 def test_sso_auth_flow():
     print("\n--- Test Suite: Google & Facebook Single Sign-On (SSO) ---")
     
-    # 0. Test Strict Registration: Unregistered user attempting Sign-In MUST fail with 404
+    # 0. Test Seamless Sign-In / Auto-provisioning for new Google user
     unreg_email = f"unreg_user_{uuid.uuid4().hex[:6]}@gmail.com"
     sso_unreg_signin = client.post(
         "/api/v1/auth/sso",
@@ -28,9 +28,9 @@ def test_sso_auth_flow():
             "mode": "signin"
         }
     )
-    assert sso_unreg_signin.status_code == 404
-    assert "No Mentor Me account found" in sso_unreg_signin.json()["detail"]
-    print("PASS: Unregistered Google Sign-In correctly rejected with 404 strict enforcement.")
+    assert sso_unreg_signin.status_code == 200
+    assert "access_token" in sso_unreg_signin.json()
+    print("PASS: New Google user automatically and seamlessly auto-provisioned.")
 
     # 1. Test Google SSO Sign-Up as Mentee (Create Account mode)
     g_email = f"google_user_{uuid.uuid4().hex[:6]}@gmail.com"

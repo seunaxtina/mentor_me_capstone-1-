@@ -111,7 +111,8 @@ def read_root():
     return RedirectResponse(url="/docs")
 
 
-@app.post("/api/v1/auth/signup", response_model=schemas.TokenOrTwoFactorResponse)
+@app.post("/api/v1/auth/signup", response_model=schemas.TokenOrTwoFactorResponse,status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/auth/users/", response_model=schemas.TokenOrTwoFactorResponse, status_code=status.HTTP_201_CREATED)
 def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     import random
     import threading

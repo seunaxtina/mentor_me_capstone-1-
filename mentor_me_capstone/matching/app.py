@@ -692,13 +692,25 @@ def api_signup(email, password, role, invite_code=None):
         if invite_code:
             payload["invite_code"] = invite_code
         response = api_http.post(f"{API_URL}/auth/signup", json=payload)
-        if response.status_code == 201:
-            return True, "Registration successful! You can now log in."
+        
+        # --- Added 2FA check logic here ---
+        if response.status_code in (200, 201):
+            data = response.json()
+            if data.get("two_factor_required"):
+                st.session_state["2fa_challenge_token"] = data.get("challenge_token")
+                st.session_state["2fa_email"] = data.get("email")
+                st.session_state["2fa_is_signup"] = True
+                st.session_state["2fa_delivery_hint"] = data.get("delivery_hint")
+                st.success("Account registered! Please enter the 6-digit code sent to your email.")
+                st.rerun()
+            else:
+                return True, "Account created successfully! Please log in."
         else:
             detail = response.json().get("detail", "Signup failed")
             return False, f"Error: {detail}"
     except Exception as e:
         return False, f"API Connection Error: {e}"
+
 
 def api_nominate_mentor(name, contact, tech_focus, custom_message=None):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}

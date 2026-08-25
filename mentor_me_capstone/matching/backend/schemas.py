@@ -77,13 +77,14 @@ class Token(BaseModel):
     token_type: str
 
 class TokenOrTwoFactorResponse(BaseModel):
-    two_factor_required: bool = False
     access_token: Optional[str] = None
     token_type: Optional[str] = None
+    two_factor_required: bool = False
     challenge_token: Optional[str] = None
     email: Optional[str] = None
     delivery_hint: Optional[str] = None
     otp_code_preview: Optional[str] = None
+    is_signup: Optional[bool] = False
 
 class TwoFactorVerifyRequest(BaseModel):
     challenge_token: str

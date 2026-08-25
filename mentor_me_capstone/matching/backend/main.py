@@ -110,8 +110,13 @@ def read_root():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/docs")
 
-@app.post("/api/v1/auth/signup", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+
+@app.post("/api/v1/auth/signup", response_model=schemas.TokenOrTwoFactorResponse)
 def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
+    import random
+    import threading
+    import datetime
+
     # Check if email exists
     existing_user = db.query(models.User).filter(models.User.email == user_in.email).first()
     if existing_user:
@@ -119,20 +124,53 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user with this email already exists."
         )
-    
+
     # Hash password
     hashed_pwd = auth.get_password_hash(user_in.password)
-    
+    otp = f"{random.randint(100000, 999999)}"
+    now = datetime.datetime.utcnow()
+
     # Create User
     new_user = models.User(
         email=user_in.email,
         password_hash=hashed_pwd,
-        role=user_in.role.upper()
+        role=user_in.role.upper() if hasattr(user_in, "role") and user_in.role else "MENTEE",
+        two_factor_enabled=True,
+        is_verified=False,
+        otp_code=otp,
+        otp_expiry=now + datetime.timedelta(minutes=5),
+        otp_failed_attempts=0,
+        otp_last_sent_at=now
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
+    # Send verification email via Resend
+    email_thread = threading.Thread(
+        target=auth.send_email_notification,
+        kwargs={
+            "to_email": new_user.email,
+            "subject": "Welcome to MentorMe - Verify Your Account",
+            "body_text": f"Hello,\n\nWelcome to MentorMe! Your 6-digit email verification code is: {otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentorMe Team",
+            "body_html": f"<p>Hello,</p><p>Welcome to MentorMe! Your 6-digit email verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>MentorMe Team</p>"
+        },
+        daemon=True
+    )
+    email_thread.start()
+
+    challenge_token = auth.create_access_token(
+        data={"sub": new_user.email, "type": "2fa_challenge"},
+        expires_delta=datetime.timedelta(minutes=10)
+    )
+
+    return schemas.TokenOrTwoFactorResponse(
+        two_factor_required=True,
+        challenge_token=challenge_token,
+        email=new_user.email,
+        delivery_hint="A 6-digit verification code has been sent to your email to verify your account.",
+        is_signup=True
+    )    
     # Parse experience tier based on years_code_pro if provided, otherwise default to role standards
     years = float(user_in.years_code_pro or (1.0 if user_in.role.upper() == "MENTEE" else 5.0))
     if years <= 2: exp_tier = '0-2y'
@@ -277,62 +315,117 @@ def login(
 
 @app.post("/api/v1/auth/2fa/verify", response_model=schemas.Token)
 def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends(get_db)):
-    payload = auth.verify_2fa_challenge_token(req.challenge_token, req.code)
-    user_id = payload.get("sub")
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    try:
+        payload = auth.verify_token(req.challenge_token)
+        if payload.get("type") != "2fa_challenge":
+            raise HTTPException(status_code=400, detail="Invalid challenge token")
+        email = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Verification session expired. Please log in again.")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Max 5 attempts rate limiting
+    if (user.otp_failed_attempts or 0) >= 5:
+        user.otp_code = None
+        user.otp_expiry = None
+        user.otp_failed_attempts = 0
+        db.commit()
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account not found."
+            status_code=429,
+            detail="Too many failed attempts. This code has expired. Please request a new code or log in again."
         )
-        
+
+    # Expiration check
+    if not user.otp_code or not user.otp_expiry or datetime.datetime.utcnow() > user.otp_expiry:
+        raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new one.")
+
+    # Match check
+    if user.otp_code != req.code.strip():
+        user.otp_failed_attempts = (user.otp_failed_attempts or 0) + 1
+        db.commit()
+        remaining = 5 - user.otp_failed_attempts
+        if remaining <= 0:
+            user.otp_code = None
+            user.otp_expiry = None
+            db.commit()
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed attempts. This code has been invalidated. Please log in again."
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid verification code. {remaining} attempt(s) remaining."
+        )
+
+    # Success: activate user & clear OTP
+    user.otp_code = None
+    user.otp_expiry = None
+    user.otp_failed_attempts = 0
+    user.is_verified = True
+    db.commit()
+
     access_token = auth.create_access_token(
-        data={"sub": user.id, "role": user.role}
+        data={"sub": user.email, "role": user.role, "user_id": user.id, "name": user.name}
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.post("/api/v1/auth/2fa/resend", response_model=schemas.TokenOrTwoFactorResponse)
+@app.post("/api/v1/auth/2fa/resend")
 def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = Depends(get_db)):
-    try:
-        payload = jwt.decode(req.challenge_token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM], options={"verify_exp": False})
-        if payload.get("purpose") != "2fa_challenge":
-            raise HTTPException(status_code=400, detail="Invalid challenge token.")
-        user_id = payload.get("sub")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid challenge session. Please sign in again.")
-        
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
-        
-    new_otp = auth.generate_otp_code(6)
-    new_challenge = auth.create_2fa_challenge_token(
-        user_id=user.id,
-        otp_code=new_otp,
-        email=user.email,
-        role=user.role,
-        expires_minutes=5
-    )
+    import random
     import threading
+
+    try:
+        payload = auth.verify_token(req.challenge_token)
+        email = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    now = datetime.datetime.utcnow()
+    if user.otp_last_sent_at:
+        elapsed = (now - user.otp_last_sent_at).total_seconds()
+        if elapsed < 60:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {int(60 - elapsed)} second(s) before requesting another code."
+            )
+
+    new_otp = f"{random.randint(100000, 999999)}"
+    user.otp_code = new_otp
+    user.otp_expiry = now + datetime.timedelta(minutes=5)
+    user.otp_failed_attempts = 0
+    user.otp_last_sent_at = now
+    db.commit()
+
     email_thread = threading.Thread(
         target=auth.send_email_notification,
         kwargs={
             "to_email": user.email,
-            "subject": "Your New Mentor Me 2FA Verification Code",
-            "body_text": f"Hello,\n\nYour new 6-digit Double Authentication code is: {new_otp}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+            "subject": "Your MentorMe 2FA Verification Code",
+            "body_text": f"Hello,\n\nYour new verification code is: {new_otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentorMe Team",
+            "body_html": f"<p>Hello,</p><p>Your new verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{new_otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>MentorMe Team</p>"
         },
         daemon=True
     )
     email_thread.start()
 
+    new_challenge = auth.create_access_token(
+        data={"sub": user.email, "type": "2fa_challenge"},
+        expires_delta=datetime.timedelta(minutes=10)
+    )
+
     return schemas.TokenOrTwoFactorResponse(
         two_factor_required=True,
         challenge_token=new_challenge,
         email=user.email,
-        delivery_hint=f"A new 6-digit security code has been generated.",
-        otp_code_preview=new_otp
+        delivery_hint="A new 6-digit security code has been sent to your email."
     )
-
 @app.get("/api/v1/auth/email-status")
 @app.get("/api/v1/auth/smtp-status")
 def email_diagnostic_status():

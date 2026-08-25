@@ -104,10 +104,11 @@ for col_stmt in [
 
 app = FastAPI(title="Mentor Me — Secure Backend API", version="1.0.0")
 
-# CORS configurations
+# CORS configurations — restrict to deployment URL in production
+_cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,7 +123,7 @@ def read_root():
 @app.post("/api/v1/auth/signup", response_model=schemas.TokenOrTwoFactorResponse,status_code=status.HTTP_201_CREATED)
 @app.post("/api/v1/auth/users/", response_model=schemas.TokenOrTwoFactorResponse, status_code=status.HTTP_201_CREATED)
 def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
-    import random
+    import hashlib
     import threading
     import datetime
 
@@ -134,14 +135,23 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="A user with this email already exists."
         )
 
+    # P1: Backend password strength validation
+    if len(user_in.password.strip()) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long."
+        )
+
     # Hash password
     hashed_pwd = auth.get_password_hash(user_in.password)
-    otp = f"{random.randint(100000, 999999)}"
+    # P0: Use cryptographically secure OTP generation
+    otp = auth.generate_otp_code(6)
     now = datetime.datetime.utcnow()
 
     user_display_name = user_in.name or user_in.email.split("@")[0].capitalize()
 
-    # Create User
+    # Create User — P1: store hashed OTP instead of plaintext
+    otp_hash = hashlib.sha256(otp.encode()).hexdigest()
     new_user = models.User(
         email=user_in.email,
         name=user_display_name,
@@ -149,7 +159,7 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         role=user_in.role.upper() if hasattr(user_in, "role") and user_in.role else "MENTEE",
         two_factor_enabled=True,
         is_verified=False,
-        otp_code=otp,
+        otp_code=otp_hash,
         otp_expiry=now + datetime.timedelta(minutes=5),
         otp_failed_attempts=0,
         otp_last_sent_at=now
@@ -248,9 +258,13 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     )
     email_thread.start()
 
-    challenge_token = auth.create_access_token(
-        data={"sub": new_user.email, "type": "2fa_challenge"},
-        expires_delta=datetime.timedelta(minutes=10)
+    # P0: Unified challenge token creation (same as login flow)
+    challenge_token = auth.create_2fa_challenge_token(
+        user_id=new_user.id,
+        otp_code=otp,
+        email=new_user.email,
+        role=new_user.role,
+        expires_minutes=5
     )
 
     return schemas.TokenOrTwoFactorResponse(
@@ -258,7 +272,7 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         two_factor_enabled=True,
         challenge_token=challenge_token,
         email=new_user.email,
-        otp_code_preview=otp,
+        otp_code_preview=otp if os.getenv("DEBUG_OTP") == "true" else None,
         delivery_hint="A 6-digit verification code has been sent to your email to verify your account.",
         is_signup=True
     )
@@ -287,9 +301,11 @@ def login(
         is_2fa_enabled = False
         
     if is_2fa_enabled:
+        import hashlib
         otp_code = auth.generate_otp_code(6)
         now = datetime.datetime.utcnow()
-        user.otp_code = otp_code
+        # P1: Store hashed OTP in database
+        user.otp_code = hashlib.sha256(otp_code.encode()).hexdigest()
         user.otp_expiry = now + datetime.timedelta(minutes=5)
         user.otp_failed_attempts = 0
         user.otp_last_sent_at = now
@@ -320,7 +336,7 @@ def login(
             challenge_token=challenge_token,
             email=user.email,
             delivery_hint=f"A 6-digit security code has been sent to {user.email}.",
-            otp_code_preview=otp_code
+            otp_code_preview=otp_code if os.getenv("DEBUG_OTP") == "true" else None
         )
     
     # If 2FA disabled, generate direct access token
@@ -365,8 +381,10 @@ def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends
     if not user.otp_code or not user.otp_expiry or datetime.datetime.utcnow() > user.otp_expiry:
         raise HTTPException(status_code=400, detail="Verification code has expired. Please request a new one.")
 
-    # Match check
-    if user.otp_code != req.code.strip():
+    # Match check — P1: compare hashed OTP
+    import hashlib
+    submitted_hash = hashlib.sha256(req.code.strip().encode()).hexdigest()
+    if user.otp_code != submitted_hash:
         user.otp_failed_attempts = (user.otp_failed_attempts or 0) + 1
         db.commit()
         remaining = 5 - user.otp_failed_attempts
@@ -397,7 +415,7 @@ def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends
 
 @app.post("/api/v1/auth/2fa/resend")
 def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = Depends(get_db)):
-    import random
+    import hashlib
     import threading
 
     try:
@@ -420,8 +438,9 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
                 detail=f"Please wait {int(60 - elapsed)} second(s) before requesting another code."
             )
 
-    new_otp = f"{random.randint(100000, 999999)}"
-    user.otp_code = new_otp
+    # P0: Use secure OTP generation + P1: store hashed
+    new_otp = auth.generate_otp_code(6)
+    user.otp_code = hashlib.sha256(new_otp.encode()).hexdigest()
     user.otp_expiry = now + datetime.timedelta(minutes=5)
     user.otp_failed_attempts = 0
     user.otp_last_sent_at = now
@@ -439,9 +458,13 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
     )
     email_thread.start()
 
-    new_challenge = auth.create_access_token(
-        data={"sub": user.email, "type": "2fa_challenge"},
-        expires_delta=datetime.timedelta(minutes=10)
+    # P0: Unified challenge token + P2: aligned 5-minute expiry
+    new_challenge = auth.create_2fa_challenge_token(
+        user_id=user.id,
+        otp_code=new_otp,
+        email=user.email,
+        role=user.role,
+        expires_minutes=5
     )
 
     return schemas.TokenOrTwoFactorResponse(
@@ -449,7 +472,7 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
         two_factor_enabled=True,
         challenge_token=new_challenge,
         email=user.email,
-        otp_code_preview=new_otp,
+        otp_code_preview=new_otp if os.getenv("DEBUG_OTP") == "true" else None,
         delivery_hint="A new 6-digit security code has been sent to your email."
     )
 @app.get("/api/v1/auth/email-status")
@@ -522,10 +545,13 @@ def toggle_two_factor(
 def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
     email_clean = req.email.lower().strip()
     user = db.query(models.User).filter(models.User.email == email_clean).first()
+
+    # P1: Prevent user enumeration — always return a success-like response
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account found with this email address."
+        return schemas.ForgotPasswordResponse(
+            message=f"If an account exists for {email_clean}, a password reset code has been sent.",
+            challenge_token="",
+            delivery_hint="Check your email for the reset code."
         )
         
     otp = auth.generate_otp_code(6)
@@ -554,13 +580,13 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
         body_text=f"Hello,\n\nYour 6-digit password reset code is: {otp}\n\nThis code will expire in 15 minutes.\n\nIf you did not request a password reset, please ignore this email.\n\nBest,\nMentor Me Support Team"
     )
     
-    delivery_msg = f"A 6-digit password reset code was sent to {user.email}." if email_sent else f"Password reset verification code generated for {user.email}."
+    delivery_msg = f"If an account exists for {email_clean}, a password reset code has been sent."
     
     return schemas.ForgotPasswordResponse(
         message=delivery_msg,
         challenge_token=challenge_token,
         delivery_hint="Enter the 6-digit code and your new password.",
-        otp_code_preview=otp
+        otp_code_preview=otp if os.getenv("DEBUG_OTP") == "true" else None
     )
 
 @app.post("/api/v1/auth/reset-password", response_model=schemas.ResetPasswordResponse)
@@ -575,10 +601,10 @@ def reset_password(req: schemas.ResetPasswordRequest, db: Session = Depends(get_
             detail="User account not found."
         )
         
-    if len(req.new_password.strip()) < 6:
+    if len(req.new_password.strip()) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 6 characters long."
+            detail="Password must be at least 8 characters long."
         )
         
     # Update password

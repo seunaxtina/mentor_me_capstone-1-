@@ -4,6 +4,9 @@ import unittest
 import uuid
 from fastapi.testclient import TestClient
 
+# Enable OTP debug preview for testing
+os.environ["DEBUG_OTP"] = "true"
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.main import app
 from backend.database import get_db, Base, engine

@@ -6,14 +6,22 @@ import jwt
 from jwt.exceptions import PyJWTError
 from sqlalchemy.orm import Session
 import os
+import logging
 
 from .database import get_db
 from . import models
 
 import bcrypt
 
-# Environment config secret or default secure key
-SECRET_KEY = os.getenv("SECRET_KEY", "b3b2c6a0c5c4d36e2f1e4b9d0c6d5b0a720f4cbe60b64d2d4d8c7c91a0c8b2a1")
+logger = logging.getLogger(__name__)
+
+# Environment config secret — generate a random key per instance if not configured
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    import secrets as _secrets
+    SECRET_KEY = _secrets.token_hex(32)
+    logger.warning("SECRET_KEY not set in environment — using a random key. Sessions will NOT persist across restarts.")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -42,9 +50,10 @@ def verify_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except Exception as e:
+        logger.debug("Token verification failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {e}",
+            detail="Invalid or expired token. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -59,15 +68,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
-            print("JWT VALIDATION FAIL: sub is None")
+            logger.debug("JWT validation failed: 'sub' claim is missing")
             raise credentials_exception
     except PyJWTError as e:
-        print(f"JWT VALIDATION FAIL (PyJWTError): {e}")
+        logger.debug("JWT validation failed: %s", e)
         raise credentials_exception
         
     user = db.query(models.User).filter((models.User.id == user_id) | (models.User.email == user_id)).first()
     if user is None:
-        print(f"JWT VALIDATION FAIL: User with ID or Email {user_id} not found in database")
+        logger.debug("JWT validation failed: user not found in database")
         raise credentials_exception
     return user
 

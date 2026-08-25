@@ -2,6 +2,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Enable OTP debug preview for testing
+os.environ["DEBUG_OTP"] = "true"
+
 import datetime
 import uuid
 from fastapi.testclient import TestClient

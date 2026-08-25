@@ -5,6 +5,9 @@ import uuid
 import jwt
 from fastapi.testclient import TestClient
 
+# Enable OTP debug preview for testing
+os.environ["DEBUG_OTP"] = "true"
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.main import app
 from backend.database import get_db, Base, engine
@@ -33,8 +36,12 @@ class TestPasswordResetFlow(unittest.TestCase):
         resp = client.post("/api/v1/auth/forgot-password", json={
             "email": "nonexistent_user_999@example.com"
         })
-        self.assertEqual(resp.status_code, 404)
-        print("PASS: Unknown email rejected with 404 Not Found.")
+        # Should return 200 with generic message to prevent user enumeration
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("If an account exists", data.get("message", ""))
+        self.assertEqual(data.get("challenge_token"), "")
+        print("PASS: Unknown email returns generic 200 response (anti-enumeration).")
 
     def test_02_forgot_password_success(self):
         resp = client.post("/api/v1/auth/forgot-password", json={

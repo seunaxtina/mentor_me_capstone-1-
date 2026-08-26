@@ -2723,19 +2723,20 @@ else:
                                         del st.session_state['current_matches']
                                     st.rerun()
                                     
-                    st.subheader("Score Breakdown — Top Match")
-                    top = matches[0]
-                    if top.get('is_representation_boosted'):
-                        st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
-                    if top.get('is_ally_boosted'):
-                        st.info("🤝 **Diversity Ally Boost Applied (+10%)**: Mentee requested and was matched with an active Diversity & Inclusion Ally.")
-                    breakdown = pd.DataFrame({
-                        'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
-                                      'Goals alignment (15%)', 'Practical fit (10%)'],
-                        'Score': [top['role_score'], top['experience_score'], top['career_stage_score'],
-                                  top['goals_score'], top['practical_score']]
-                    })
-                    st.bar_chart(breakdown.set_index('Criterion'))
+                    with st.expander("📊 View Detailed Score Breakdown (Top Match)", expanded=False):
+                        st.subheader("Score Breakdown — Top Match")
+                        top = matches[0]
+                        if top.get('is_representation_boosted'):
+                            st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
+                        if top.get('is_ally_boosted'):
+                            st.info("🤝 **Diversity Ally Boost Applied (+10%)**: Mentee requested and was matched with an active Diversity & Inclusion Ally.")
+                        breakdown = pd.DataFrame({
+                            'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
+                                          'Goals alignment (15%)', 'Practical fit (10%)'],
+                            'Score': [top['role_score'], top['experience_score'], top['career_stage_score'],
+                                      top['goals_score'], top['practical_score']]
+                        })
+                        st.bar_chart(breakdown.set_index('Criterion'))
             
             with tab_history:
                 import urllib.parse as _up_hist
@@ -2864,6 +2865,19 @@ else:
                                     f"<span style='font-size:0.7rem; color:#6c757d;'>{quality or 'Match Score'}</span></div>",
                                     unsafe_allow_html=True
                                 )
+
+                            with st.expander(f"📊 View Compatibility Breakdown ({score}%)", expanded=False):
+                                if h.get('is_representation_boosted'):
+                                    st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
+                                if h.get('is_ally_boosted'):
+                                    st.info("🤝 **Diversity Ally Match**: This mentor is an active Diversity & Inclusion Ally.")
+                                h_breakdown = pd.DataFrame({
+                                    'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
+                                                  'Goals alignment (15%)', 'Practical fit (10%)'],
+                                    'Score': [h.get('role_score', 0), h.get('experience_score', 0), h.get('career_stage_score', 0),
+                                              h.get('goals_score', 0), h.get('practical_score', 0)]
+                                })
+                                st.bar_chart(h_breakdown.set_index('Criterion'))
 
                             # Connected mentor — show full action expanders
                             if status == 'ACCEPTED':
@@ -3747,7 +3761,7 @@ else:
         with col_bell:
             render_top_notifications_bell("MENTOR")
         
-        tab_setup, tab_requests, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "🤝 Nominate a Colleague"])
+        tab_setup, tab_requests, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "📜 Match History", "🤝 Nominate a Colleague"])
         
         with tab_setup:
             st.subheader("Profile Details")
@@ -4185,6 +4199,159 @@ else:
 
                             with st.expander(f"💬 In-App Direct Chat with {conn['mentee_name']}", expanded=True):
                                 display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_req_{conn['id']}")
+
+        with tab_history_m:
+            import urllib.parse as _up_mhist
+            st.subheader("My Match & Connection History")
+            st.caption("A comprehensive archive of all mentee match requests, active mentorship connections, and previous responses.")
+
+            m_history = sorted(api_get_match_history() or [], key=lambda h: h.get('created_at', ''), reverse=True)
+
+            if not m_history:
+                st.info("You haven't received any mentee connection requests yet.")
+            else:
+                total_mh   = len(m_history)
+                active_mh  = sum(1 for h in m_history if h['status'] == 'ACCEPTED')
+                pending_mh = sum(1 for h in m_history if h['status'] in ['REQUESTED', 'PENDING'])
+                declined_mh = sum(1 for h in m_history if h['status'] in ['DECLINED', 'DECLINE'])
+
+                mhm1, mhm2, mhm3, mhm4 = st.columns(4)
+                mhm1.metric("📋 Total Matches", total_mh)
+                mhm2.metric("✅ Active Connections", active_mh)
+                mhm3.metric("🔔 Awaiting Response", pending_mh)
+                mhm4.metric("❌ Declined / Passed", declined_mh)
+                st.markdown("---")
+
+                # Filter & Sort controls
+                mf_col1, mf_col2 = st.columns([2, 1])
+                with mf_col1:
+                    m_status_filter = st.selectbox(
+                        "Filter by Status",
+                        ["All", "✅ Active Connections (ACCEPTED)", "🔔 Awaiting Response (REQUESTED)", "❌ Declined / Passed"],
+                        key="m_hist_status_filter"
+                    )
+                with mf_col2:
+                    m_sort_by = st.selectbox(
+                        "Sort by",
+                        ["📅 Date (Newest First)", "🏆 Match Score (Highest First)", "📅 Date (Oldest First)"],
+                        key="m_hist_sort_by"
+                    )
+
+                m_status_map = {
+                    "All": None,
+                    "✅ Active Connections (ACCEPTED)": "ACCEPTED",
+                    "🔔 Awaiting Response (REQUESTED)": "REQUESTED",
+                    "❌ Declined / Passed": "DECLINED"
+                }
+                m_active_filter = m_status_map[m_status_filter]
+                if m_active_filter == "DECLINED":
+                    m_filtered = [h for h in m_history if h['status'] in ['DECLINED', 'DECLINE']]
+                elif m_active_filter == "REQUESTED":
+                    m_filtered = [h for h in m_history if h['status'] in ['REQUESTED', 'PENDING']]
+                elif m_active_filter is not None:
+                    m_filtered = [h for h in m_history if h['status'] == m_active_filter]
+                else:
+                    m_filtered = m_history
+
+                if "Score" in m_sort_by:
+                    m_filtered = sorted(m_filtered, key=lambda x: x.get('total_score', 0), reverse=True)
+                elif "Oldest" in m_sort_by:
+                    m_filtered = sorted(m_filtered, key=lambda x: x.get('created_at', ''))
+                else:
+                    m_filtered = sorted(m_filtered, key=lambda x: x.get('created_at', ''), reverse=True)
+
+                if not m_filtered:
+                    st.info("No records found for the selected filter.")
+                else:
+                    st.caption(f"Showing {len(m_filtered)} of {total_mh} records.")
+
+                for mh in m_filtered:
+                    m_score = mh.get('total_score', 0)
+                    if isinstance(m_score, float) and m_score <= 1.0:
+                        m_score = int(round(m_score * 100))
+                    else:
+                        m_score = int(round(m_score))
+                    
+                    mh_status = mh['status']
+                    if m_score >= 80:
+                        m_sc_color = "#1e7e34"
+                    elif m_score >= 50:
+                        m_sc_color = "#856404"
+                    else:
+                        m_sc_color = "#721c24"
+
+                    if mh_status == 'ACCEPTED':
+                        mh_badge = "✅ Active Connection"
+                        mh_color = "#155724"
+                        mh_bg = "#d4edda"
+                    elif mh_status in ['DECLINED', 'DECLINE']:
+                        mh_badge = "❌ Declined / Passed"
+                        mh_color = "#721c24"
+                        mh_bg = "#f8d7da"
+                    elif mh_status == 'REQUESTED':
+                        mh_badge = "🔔 Awaiting Your Response"
+                        mh_color = "#856404"
+                        mh_bg = "#fff3cd"
+                    else:
+                        mh_badge = f"ℹ️ {mh_status}"
+                        mh_color = "#004085"
+                        mh_bg = "#cce5ff"
+
+                    mh_date = mh['created_at'].split("T")[0] if 'T' in mh['created_at'] else mh['created_at']
+
+                    with st.container(border=True):
+                        top_ml, top_mr = st.columns([3, 1])
+                        with top_ml:
+                            st.markdown(f"##### {mh['mentee_name']}")
+                            m_roles_display = (mh.get('mentee_devtype') or '').replace(';', ' · ')
+                            st.caption(f"📍 {mh.get('mentee_country', '')}  ·  {m_roles_display}  ·  {mh.get('mentee_years', '?')} yrs exp")
+                            st.markdown(
+                                f"<span style='background:{mh_bg}; color:{mh_color}; "
+                                f"padding:3px 10px; border-radius:12px; font-size:0.8rem; font-weight:600;'>"
+                                f"{mh_badge}</span>"
+                                f"  <span style='color:#6c757d; font-size:0.8rem;'>· Received {mh_date}</span>",
+                                unsafe_allow_html=True
+                            )
+                            if mh.get('is_ally_boosted'):
+                                st.success("🤝 **Diversity Ally Match**: Matched because you are a registered D&I Ally.")
+                        with top_mr:
+                            st.markdown(
+                                f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                f"<span style='color:{m_sc_color}; font-size:1rem; font-weight:700;'>{m_score}%</span><br/>"
+                                f"<span style='font-size:0.7rem; color:#6c757d;'>{mh.get('match_quality', 'Match Score')}</span></div>",
+                                unsafe_allow_html=True
+                            )
+
+                        with st.expander(f"👤 View {mh['mentee_name']}'s Profile"):
+                            display_profile_card(
+                                name=mh['mentee_name'],
+                                country=mh.get('mentee_country'),
+                                ed_level=mh.get('mentee_ed_level'),
+                                roles=mh.get('mentee_devtype'),
+                                years=mh.get('mentee_years'),
+                                org_size=mh.get('mentee_org_size'),
+                                priorities=mh.get('mentee_job_factors'),
+                                additional_details=mh.get('mentee_additional_details'),
+                                user_id=mh.get('mentee_id'),
+                                email=mh.get('mentee_email'),
+                                alternative_emails=mh.get('mentee_alternative_emails'),
+                                linkedin_link=mh.get('mentee_linkedin_link')
+                            )
+
+                        if mh.get('mentee_cv_path'):
+                            with st.expander(f"📄 Read {mh['mentee_name']}'s CV"):
+                                pdf_bytes = api_get_cv(mh['mentee_id'])
+                                if pdf_bytes:
+                                    display_pdf_inline(pdf_bytes)
+
+                        with st.expander(f"📊 View Compatibility Breakdown ({m_score}%)", expanded=False):
+                            m_breakdown = pd.DataFrame({
+                                'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
+                                              'Goals alignment (15%)', 'Practical fit (10%)'],
+                                'Score': [mh.get('role_score', 0), mh.get('experience_score', 0), mh.get('career_stage_score', 0),
+                                          mh.get('goals_score', 0), mh.get('practical_score', 0)]
+                            })
+                            st.bar_chart(m_breakdown.set_index('Criterion'))
 
         with tab_nominate:
             import urllib.parse as _up_nom

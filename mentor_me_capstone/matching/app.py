@@ -592,10 +592,22 @@ if "code" in st.query_params:
         }
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
-            st.session_state['access_token'] = resp.json()['access_token']
-            st.session_state['two_factor_challenge'] = None
-            st.session_state['sso_error'] = None
-            fetch_profile()
+            res_data = resp.json()
+            if _mode == "signup":
+                # Account successfully registered via Google/Facebook SSO
+                role_label = res_data.get('role', _role).capitalize()
+                user_email = res_data.get('email', '')
+                provider_label = res_data.get('provider', _prov).capitalize()
+                st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}! Please select 'Continue as {role_label} with {provider_label}' on the Sign In tab to enter your dashboard."
+                st.session_state['access_token'] = None
+                st.session_state['sso_error'] = None
+            else:
+                st.session_state['access_token'] = res_data['access_token']
+                st.session_state['two_factor_challenge'] = None
+                st.session_state['sso_error'] = None
+                if 'sso_success_msg' in st.session_state:
+                    del st.session_state['sso_success_msg']
+                fetch_profile()
         else:
             err_msg = resp.json().get('detail', 'Google authentication failed.')
             st.session_state['sso_error'] = err_msg
@@ -1990,6 +2002,12 @@ def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix=
 
 # Application Views
 if st.session_state['access_token'] is None:
+    if st.session_state.get('sso_success_msg'):
+        st.success(f"{st.session_state['sso_success_msg']}")
+        if st.button("Dismiss Message", key="dismiss_sso_success_btn"):
+            del st.session_state['sso_success_msg']
+            st.rerun()
+
     if st.session_state.get('sso_error'):
         st.error(f"❌ {st.session_state['sso_error']}")
         if st.button("Dismiss Notice", key="dismiss_sso_err_btn"):

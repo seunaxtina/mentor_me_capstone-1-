@@ -104,11 +104,13 @@ for col_stmt in [
 # Ensure default demo Admin account exists in database
 try:
     with SessionLocal() as db_session:
-        admin_check = db_session.query(models.User).filter(models.User.email == "admin@mentorme.demo").first()
+        admin_check = db_session.query(models.User).filter(
+            (models.User.email == "admin@mentoring-me.demo") | (models.User.email == "admin@mentorme.demo")
+        ).first()
         if not admin_check:
             admin_user = models.User(
                 id="admin-uuid-clean-001",
-                email="admin@mentorme.demo",
+                email="admin@mentoring-me.demo",
                 name="Admin Demo",
                 password_hash=auth.get_password_hash("adminpassword"),
                 role="ADMIN",
@@ -121,7 +123,7 @@ try:
 except Exception:
     pass
 
-app = FastAPI(title="Mentor Me — Secure Backend API", version="1.0.0")
+app = FastAPI(title="Mentoring-Me — Secure Backend API", version="1.0.0")
 
 # CORS configurations — restrict to deployment URL in production
 _cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -269,9 +271,9 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         target=auth.send_email_notification,
         kwargs={
             "to_email": new_user.email,
-            "subject": "Welcome to MentorMe - Verify Your Account",
-            "body_text": f"Hello,\n\nWelcome to MentorMe! Your 6-digit email verification code is: {otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentorMe Team",
-            "body_html": f"<p>Hello,</p><p>Welcome to MentorMe! Your 6-digit email verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>MentorMe Team</p>"
+            "subject": "Welcome to Mentoring-Me - Verify Your Account",
+            "body_text": f"Hello,\n\nWelcome to Mentoring-Me! Your 6-digit email verification code is: {otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentoring-Me Team",
+            "body_html": f"<p>Hello,</p><p>Welcome to Mentoring-Me! Your 6-digit email verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>Mentoring-Me Team</p>"
         },
         daemon=True
     )
@@ -306,7 +308,7 @@ def login(
     user = db.query(models.User).filter(models.User.email == clean_username).first()
     
     # Auto-provision or verify Admin demo credentials
-    if clean_username in ["admin@mentorme.demo", "admin@mentorme.com"]:
+    if clean_username in ["admin@mentoring-me.demo", "admin@mentoring-me.com", "admin@mentorme.demo", "admin@mentorme.com"]:
         if form_data.password in ["adminpassword", "password123", "admin123", "admin"]:
             if not user:
                 user = models.User(
@@ -348,7 +350,7 @@ def login(
         is_2fa_enabled = True
         
     # Admin demo credentials bypass 2FA for immediate evaluation and management
-    if user.role == "ADMIN" or clean_username in ["admin@mentorme.demo", "admin@mentorme.com"]:
+    if user.role == "ADMIN" or clean_username in ["admin@mentoring-me.demo", "admin@mentoring-me.com", "admin@mentorme.demo", "admin@mentorme.com"]:
         is_2fa_enabled = False
         
     if is_2fa_enabled:
@@ -375,8 +377,8 @@ def login(
             target=auth.send_email_notification,
             kwargs={
                 "to_email": user.email,
-                "subject": "Your Mentor Me 2FA Verification Code",
-                "body_text": f"Hello,\n\nYour 6-digit Double Authentication code is: {otp_code}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentor Me Security Team"
+                "subject": "Your Mentoring-Me 2FA Verification Code",
+                "body_text": f"Hello,\n\nYour 6-digit Double Authentication code is: {otp_code}\n\nThis code will expire in 5 minutes.\n\nBest,\nMentoring-Me Security Team"
             },
             daemon=True
         )
@@ -501,9 +503,9 @@ def resend_two_factor_code(req: schemas.TwoFactorResendRequest, db: Session = De
         target=auth.send_email_notification,
         kwargs={
             "to_email": user.email,
-            "subject": "Your MentorMe 2FA Verification Code",
-            "body_text": f"Hello,\n\nYour new verification code is: {new_otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentorMe Team",
-            "body_html": f"<p>Hello,</p><p>Your new verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{new_otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>MentorMe Team</p>"
+            "subject": "Your Mentoring-Me 2FA Verification Code",
+            "body_text": f"Hello,\n\nYour new verification code is: {new_otp}\n\nThis code expires in 5 minutes.\n\nBest,\nMentoring-Me Team",
+            "body_html": f"<p>Hello,</p><p>Your new verification code is:</p><h2 style='color:#4F46E5; letter-spacing: 4px;'>{new_otp}</h2><p>This code expires in 5 minutes.</p><p>Best,<br>Mentoring-Me Team</p>"
         },
         daemon=True
     )
@@ -627,8 +629,8 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
     # Send via SMTP if configured
     email_sent = auth.send_email_notification(
         to_email=user.email,
-        subject="Password Reset Code — Mentor Me",
-        body_text=f"Hello,\n\nYour 6-digit password reset code is: {otp}\n\nThis code will expire in 15 minutes.\n\nIf you did not request a password reset, please ignore this email.\n\nBest,\nMentor Me Support Team"
+        subject="Password Reset Code — Mentoring-Me",
+        body_text=f"Hello,\n\nYour 6-digit password reset code is: {otp}\n\nThis code will expire in 15 minutes.\n\nIf you did not request a password reset, please ignore this email.\n\nBest,\nMentoring-Me Support Team"
     )
     
     delivery_msg = f"If an account exists for {email_clean}, a password reset code has been sent."
@@ -1391,15 +1393,15 @@ def match_action(action_in: schemas.MatchAction, current_user: models.User = Dep
         mentee_display = mentee_prof.name if mentee_prof and mentee_prof.name else "A mentee"
         auth.send_email_notification(
             to_email=mentor_user.email,
-            subject=f"New Mentorship Request from {mentee_display} - Mentor Me",
+            subject=f"New Mentorship Request from {mentee_display} - Mentoring-Me",
             body_text=(
                 f"Hello {mentor_prof.name if mentor_prof else ''},\n\n"
-                f"{mentee_display} has requested you as a mentor on Mentor Me!\n\n"
+                f"{mentee_display} has requested you as a mentor on Mentoring-Me!\n\n"
                 f"Role/Specialization: {mentee_prof.dev_type if mentee_prof else 'Software Engineering'}\n"
                 f"Compatibility Score: {int(match.total_score * 100)}%\n\n"
                 f"Review and respond to this request directly on your Mentor Dashboard:\n"
                 f"{base_url}\n\n"
-                f"Best regards,\nThe Mentor Me Team"
+                f"Best regards,\nThe Mentoring-Me Team"
             )
         )
     elif match.status == "ACCEPTED" and mentee_user and mentee_user.email:
@@ -1407,14 +1409,14 @@ def match_action(action_in: schemas.MatchAction, current_user: models.User = Dep
         note_text = f"\nMentor Availability Note: \"{match.availability_note}\"\n" if match.availability_note else ""
         auth.send_email_notification(
             to_email=mentee_user.email,
-            subject=f"Mentorship Request Accepted by {mentor_display}! 🎉 - Mentor Me",
+            subject=f"Mentorship Request Accepted by {mentor_display}! 🎉 - Mentoring-Me",
             body_text=(
                 f"Hello {mentee_prof.name if mentee_prof else ''},\n\n"
-                f"Great news! {mentor_display} has accepted your mentorship request on Mentor Me! 🎉\n"
+                f"Great news! {mentor_display} has accepted your mentorship request on Mentoring-Me! 🎉\n"
                 f"{note_text}\n"
                 f"You can now chat directly in-app, exchange contact info, and book your first session:\n"
                 f"{base_url}\n\n"
-                f"Best regards,\nThe Mentor Me Team"
+                f"Best regards,\nThe Mentoring-Me Team"
             )
         )
     
@@ -1729,23 +1731,23 @@ def nominate_external_mentor(
         if nom_in.custom_message and nom_in.custom_message.strip():
             msg_text = nom_in.custom_message.strip()
             if new_nom.invite_code not in msg_text:
-                msg_text += f"\n\n🔗 Accept Invitation & Connect on Mentor Me:\n{invite_link}"
+                msg_text += f"\n\n🔗 Accept Invitation & Connect on Mentoring-Me:\n{invite_link}"
             email_body = msg_text
         else:
             email_body = (
                 f"Hi {new_nom.mentor_name},\n\n"
-                f"{sender_name} has invited you to connect as a mentor on Mentor Me!\n\n"
+                f"{sender_name} has invited you to connect as a mentor on Mentoring-Me!\n\n"
                 f"Focus Area: {new_nom.tech_focus}\n\n"
                 f"Use the following link to accept the invitation and establish your mentor profile:\n"
                 f"{invite_link}\n\n"
                 f"Best regards,\n"
-                f"The Mentor Me Platform (on behalf of {sender_name})"
+                f"The Mentoring-Me Platform (on behalf of {sender_name})"
             )
             
         # Send via real SMTP with Reply-To pointing directly to the mentee
         auth.send_email_notification(
             to_email=new_nom.mentor_contact,
-            subject=f"Mentorship Invitation from {sender_name} (via Mentor Me)",
+            subject=f"Mentorship Invitation from {sender_name} (via Mentoring-Me)",
             body_text=email_body,
             reply_to=current_user.email
         )
@@ -1755,7 +1757,7 @@ def nominate_external_mentor(
             with open(email_log_path, "w", encoding="utf-8") as f:
                 f.write(f"TO: {new_nom.mentor_contact}\n")
                 f.write(f"REPLY-TO: {current_user.email}\n")
-                f.write(f"SUBJECT: Mentorship Invitation from {sender_name} (via Mentor Me)\n")
+                f.write(f"SUBJECT: Mentorship Invitation from {sender_name} (via Mentoring-Me)\n")
                 f.write(f"BODY:\n{email_body}\n")
             print(f"[MOCK SMTP] Simulated email written to {email_log_path}")
         except Exception as e:
@@ -1811,21 +1813,21 @@ def send_nomination_follow_up(
         
     base_url = (os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or "http://localhost:8501").rstrip("/")
     invite_link = f"{base_url}/?invite_code={nom.invite_code}"
-    subject = req.subject or f"Checking In: Mentorship Invitation from {sender_name} (via Mentor Me)"
+    subject = req.subject or f"Checking In: Mentorship Invitation from {sender_name} (via Mentoring-Me)"
     
     if req.custom_message and req.custom_message.strip():
         msg_text = req.custom_message.strip()
         if nom.invite_code not in msg_text:
-            msg_text += f"\n\n🔗 Accept Invitation & Connect on Mentor Me:\n{invite_link}"
+            msg_text += f"\n\n🔗 Accept Invitation & Connect on Mentoring-Me:\n{invite_link}"
         email_body = msg_text
     else:
         email_body = (
             f"Hi {nom.mentor_name},\n\n"
             f"Hope you are doing well!\n\n"
-            f"Just checking in regarding the mentorship invitation {sender_name} sent to connect on Mentor Me:\n\n{invite_link}\n\n"
+            f"Just checking in regarding the mentorship invitation {sender_name} sent to connect on Mentoring-Me:\n\n{invite_link}\n\n"
             f"We would love to welcome your guidance in {nom.tech_focus}.\n\n"
             f"Best regards,\n"
-            f"The Mentor Me Platform (on behalf of {sender_name})"
+            f"The Mentoring-Me Platform (on behalf of {sender_name})"
         )
         
     # Dispatch via SMTP with Reply-To set to the mentee
@@ -2173,7 +2175,7 @@ def reset_database(
         admin_uuid = "admin-uuid-clean-001"
         admin_user = models.User(
             id=admin_uuid,
-            email="admin@mentorme.demo",
+            email="admin@mentoring-me.demo",
             password_hash=auth.get_password_hash("adminpassword"),
             role="ADMIN",
             two_factor_enabled=False
@@ -2218,7 +2220,7 @@ def send_direct_match_email(
     if not req.body_text or not req.body_text.strip():
         raise HTTPException(status_code=400, detail="Email body cannot be empty")
 
-    subject = req.subject.strip() or f"Mentor Me: Message from {sender_name}"
+    subject = req.subject.strip() or f"Mentoring-Me: Message from {sender_name}"
 
     # Dispatch email with Reply-To set to current user's email so recipient can reply directly
     auth.send_email_notification(

@@ -455,7 +455,7 @@ def generate_default_mentee_intro_message(mentor_name, mentee_name, sel_slot=Non
             f"Thank you for accepting my mentorship request and sharing your availability!\n\n"
             f"I would love to lock in our introductory 25-minute sync for:\n"
             f"📅 {sel_slot}\n\n"
-            f"I look forward to our conversation and collaborating with you on Mentor Me.\n\n"
+            f"I look forward to our conversation and collaborating with you on Mentoring-Me.\n\n"
             f"Best regards,\n{mentee_name}"
         )
     elif availability_note and ("http" in availability_note.lower() or "calendly" in availability_note.lower() or "cal.com" in availability_note.lower()):
@@ -478,7 +478,7 @@ def generate_default_mentee_intro_message(mentor_name, mentee_name, sel_slot=Non
     else:
         return (
             f"Hi {mentor_name},\n\n"
-            f"Thank you for accepting my mentorship request! I am excited to connect with you on Mentor Me.\n\n"
+            f"Thank you for accepting my mentorship request! I am excited to connect with you on Mentoring-Me.\n\n"
             f"Please let me know a few days and times that work best for our introductory 25-minute sync, or feel free to share your calendar scheduling link.\n\n"
             f"Best regards,\n{mentee_name}"
         )
@@ -547,9 +547,9 @@ ORG_SIZES = [
     "Not stated"
 ]
 
-st.set_page_config(page_title="Mentor Me — Secure Matching Platform", layout="wide")
+st.set_page_config(page_title="Mentoring-Me — Secure Matching Platform", layout="wide")
 
-st.title("🤝 Mentor Me — Secure Matching Platform")
+st.title("🤝 Mentoring-Me — Secure Matching Platform")
 st.caption(
     "A secure, database-backed mentoring matches platform. "
     "Sign up or log in to manage your profile and view matches."
@@ -1075,7 +1075,7 @@ def generate_app_linkedin_outreach_templates(
         f"I came across your profile and was really inspired by your leadership and expertise in {focus}.\n\n"
         f"I am currently an early-career technologist developing my skills in {role}, and I am seeking guidance from experienced mentors to navigate this career path effectively.\n\n"
         f"If your schedule permits, I would be deeply grateful for the opportunity to connect for a brief 15-20 minute chat or periodic mentoring.\n\n"
-        f"I am also using the Mentor Me platform to organise mentoring goals and scheduling:\n"
+        f"I am also using the Mentoring-Me platform to organise mentoring goals and scheduling:\n"
         f"{invite_link}\n\n"
         f"Thank you so much for your time and for giving back to the community!\n\n"
         f"Warm regards,\n{me_name}"
@@ -1277,7 +1277,7 @@ def api_get_unread_messages():
     except Exception:
         return {"total_unread": 0, "by_match": {}}
 
-def generate_google_calendar_url(title: str, description: str, location: str = "Virtual (Mentor Me Video / Call)", start_dt = None, end_dt = None):
+def generate_google_calendar_url(title: str, description: str, location: str = "Virtual (Mentoring-Me Video / Call)", start_dt = None, end_dt = None):
     import urllib.parse
     if not start_dt:
         start_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14)
@@ -1296,7 +1296,7 @@ def generate_google_calendar_url(title: str, description: str, location: str = "
     }
     return f"https://calendar.google.com/calendar/render?{urllib.parse.urlencode(params)}"
 
-def generate_ics_calendar_file(title: str, description: str, location: str = "Virtual (Mentor Me Video / Call)", start_dt = None, end_dt = None):
+def generate_ics_calendar_file(title: str, description: str, location: str = "Virtual (Mentoring-Me Video / Call)", start_dt = None, end_dt = None):
     import uuid
     if not start_dt:
         start_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14)
@@ -1305,7 +1305,7 @@ def generate_ics_calendar_file(title: str, description: str, location: str = "Vi
         
     fmt = "%Y%m%dT%H%M%SZ"
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime(fmt)
-    uid = f"mentorme-{uuid.uuid4().hex[:12]}@mentorme.app"
+    uid = f"mentoring-me-{uuid.uuid4().hex[:12]}@mentoring-me.app"
     
     clean_desc = description.replace("\n", "\\n").replace(",", "\\,")
     clean_title = title.replace("\n", " ").replace(",", "\\,")
@@ -1314,7 +1314,7 @@ def generate_ics_calendar_file(title: str, description: str, location: str = "Vi
     ics_content = (
         "BEGIN:VCALENDAR\r\n"
         "VERSION:2.0\r\n"
-        "PRODID:-//Mentor Me Platform//Mentorship Scheduler//EN\r\n"
+        "PRODID:-//Mentoring-Me Platform//Mentorship Scheduler//EN\r\n"
         "CALSCALE:GREGORIAN\r\n"
         "METHOD:PUBLISH\r\n"
         "BEGIN:VEVENT\r\n"
@@ -1520,7 +1520,7 @@ def trigger_client_tab_switch(target_tab_keyword: str):
 
 def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key_suffix: str = ""):
     st.markdown(f"#### 💬 Direct Conversation with {partner_name}")
-    st.caption("Secure, real-time messaging directly within the Mentor Me platform.")
+    st.caption("Secure, real-time messaging directly within the Mentoring-Me platform.")
     
     messages = api_get_messages(match_id)
     
@@ -2156,7 +2156,7 @@ def render_copilot_tab(mentee):
                                     _ally_pref = "Yes" if mentee.get('prefer_diversity_ally') else "No"
                                     _exp_tier = mentee.get('exp_tier') or 'early-career'
                                     system_inst = (
-                                        "You are an AI Career Advisor for the Mentor Me platform, a platform dedicated to "
+                                        "You are an AI Career Advisor for the Mentoring-Me platform, a platform dedicated to "
                                         "equitable mentorship pairing and career acceleration for early-career technologists and women in tech (aligned with SDG 5). "
                                         "You support users to advocate for themselves, navigate sponsorships, handle workplace dynamics, "
                                         "prepare for promotions, and transition to technical leadership. "
@@ -2252,7 +2252,7 @@ def render_copilot_tab(mentee):
                 _ally_pref = "Yes" if mentee.get('prefer_diversity_ally') else "No"
                 _exp_tier = mentee.get('exp_tier') or 'early-career'
                 system_inst = (
-                    "You are an AI Career Advisor for the Mentor Me platform, a platform dedicated to "
+                    "You are an AI Career Advisor for the Mentoring-Me platform, a platform dedicated to "
                     "equitable mentorship pairing and career acceleration for early-career technologists and women in tech (aligned with SDG 5). "
                     "You support users to advocate for themselves, navigate sponsorships, handle workplace dynamics, "
                     "prepare for promotions, and transition to technical leadership. "
@@ -2437,7 +2437,7 @@ if st.session_state['access_token'] is None:
     else:
         st.markdown("""
             <div style="margin-bottom: 22px;">
-                <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentor Me</h2>
+                <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentoring-Me</h2>
                 <p style="margin: 0; color: #64748b; font-size: 0.95rem;">Empowering equitable mentorship and career acceleration.</p>
             </div>
         """, unsafe_allow_html=True)
@@ -2446,7 +2446,7 @@ if st.session_state['access_token'] is None:
         with tab1:
             # Step 1: Primary Credentials
             with st.form("login_form"):
-                email = st.text_input("Email", placeholder="e.g. user_90001@mentorme.demo or admin@mentorme.demo")
+                email = st.text_input("Email", placeholder="e.g. user_90001@mentoring-me.demo or admin@mentoring-me.demo")
                 password = st.text_input("Password", type="password", placeholder="password123")
                 submit = st.form_submit_button("Sign In")
                 if submit:
@@ -2652,7 +2652,7 @@ else:
                 if f_match.get('availability_note'):
                     display_mentor_availability(f_match['availability_note'], profile, f_match)
                 
-                title_val = f"Mentor Me Intro Sync: {mentee['name']} & {f_match['mentor_name']}"
+                title_val = f"Mentoring-Me Intro Sync: {mentee['name']} & {f_match['mentor_name']}"
                 sel_slot = st.session_state.get('selected_scheduled_slot')
                 date_time_line = f"Date/Time: {sel_slot}\n" if (sel_slot and sel_slot != "None of these work / Coordinate Custom Time") else "Date/Time: To be coordinated\n"
                 
@@ -2690,7 +2690,7 @@ else:
                     key=f"edit_intro_msg_{f_match_id}_{sel_slot}",
                     label_visibility="collapsed"
                 )
-                coordinate_subject = f"Scheduling: Mentor Me Intro Call — {mentee['name']} & {f_match['mentor_name']}"
+                coordinate_subject = f"Scheduling: Mentoring-Me Intro Call — {mentee['name']} & {f_match['mentor_name']}"
 
                 st.markdown("**Choose Your Communication Channel:**")
                 coord_col1, coord_col2 = st.columns(2)
@@ -3237,7 +3237,7 @@ else:
                                     st.write("Generate a calendar invitation draft to schedule your first 25-minute introductory sync.")
                                     if h.get('availability_note'):
                                         display_mentor_availability(h['availability_note'], profile, h)
-                                    title_val = f"Mentor Me Intro Sync: {mentee['name']} & {h['mentor_name']}"
+                                    title_val = f"Mentoring-Me Intro Sync: {mentee['name']} & {h['mentor_name']}"
                                     sel_slot = st.session_state.get('selected_scheduled_slot')
                                     date_time_line = f"Date/Time: {sel_slot}\n" if (sel_slot and sel_slot != "None of these work / Coordinate Custom Time") else "Date/Time: To be coordinated\n"
                                     calendar_body = (
@@ -3274,20 +3274,20 @@ else:
                                         key=f"edit_mhist_intro_{h['id']}_{sel_slot}",
                                         label_visibility="collapsed"
                                     )
-                                    coordinate_subject = f"Scheduling: Mentor Me Intro Call — {mentee['name']} & {h['mentor_name']}"
+                                    coordinate_subject = f"Scheduling: Mentoring-Me Intro Call — {mentee['name']} & {h['mentor_name']}"
                                     
                                     # Google Calendar and ICS Calendar generators
                                     gcal_url = generate_google_calendar_url(
                                         title=title_val,
                                         description=calendar_body,
-                                        location="Virtual (Mentor Me Platform)",
+                                        location="Virtual (Mentoring-Me Platform)",
                                         start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
                                         end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                                     )
                                     ics_bytes = generate_ics_calendar_file(
                                         title=title_val,
                                         description=calendar_body,
-                                        location="Virtual (Mentor Me Platform)",
+                                        location="Virtual (Mentoring-Me Platform)",
                                         start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
                                         end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                                     )
@@ -3634,7 +3634,7 @@ else:
                                 copy_template = (
                                     f"Hi {candidate['name']},\n\n"
                                     f"I came across your profile and was impressed by your expertise in {candidate['tech_focus']}.\n\n"
-                                    f"I am currently seeking mentorship in this area and am using a platform called Mentor Me to manage my learning connections. "
+                                    f"I am currently seeking mentorship in this area and am using a platform called Mentoring-Me to manage my learning connections. "
                                     f"I would be honoured to connect with you. You can use the link below to join the platform and we will be automatically paired:\n\n"
                                     f"{copy_link}\n\n"
                                     f"If you prefer not to register on a new platform, feel free to reach out directly and we can coordinate externally.\n\n"
@@ -3651,14 +3651,14 @@ else:
                                     email_template = (
                                         f"Hi {nom['mentor_name']},\n\n"
                                         f"I came across your profile and noticed your expertise in {nom['tech_focus']}.\n\n"
-                                        f"I am currently looking for mentorship in this area. I'm using a platform called Mentor Me to manage my learning connections. "
+                                        f"I am currently looking for mentorship in this area. I'm using a platform called Mentoring-Me to manage my learning connections. "
                                         f"I've created a direct invitation link for you to connect with me:\n\n{invite_link}\n\n"
                                         f"If you are open to a brief chat or periodic mentoring, signing up via this link will automatically connect us on the platform. "
                                         f"Alternatively, if you prefer not to register on a new platform, feel free to reply directly to this email so we can connect and coordinate externally instead.\n\n"
                                         f"Thank you so much for your time!\n\nBest regards,\n{mentee['name']}"
                                     )
                                     outreach_message = st.text_area("Edit your invitation message:", value=email_template, height=200, key=f"drafted_outreach_msg_outreach_{idx}")
-                                    inv_subject = "Mentorship Invitation - Mentor Me"
+                                    inv_subject = "Mentorship Invitation - Mentoring-Me"
                                     btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
                                         if st.button("✉️ Send Invitation Email", key=f"send_nom_email_btn_{idx}", use_container_width=True):
@@ -3691,7 +3691,7 @@ else:
                     default_note_text = (
                         f"Hi there,\n\n"
                         f"I came across your profile and would be deeply grateful for the opportunity to connect for periodic mentorship.\n\n"
-                        f"I am using the Mentor Me platform to organise our learning goals and coordinate intro calls. "
+                        f"I am using the Mentoring-Me platform to organise our learning goals and coordinate intro calls. "
                         f"Please click the invitation link to connect with me.\n\n"
                         f"Warm regards,\n{mentee_name_val}"
                     )
@@ -3746,7 +3746,7 @@ else:
             import datetime as _dt
 
             st.subheader("My External Invitations")
-            st.caption("Track the registration status of every mentor you have personally invited to Mentor Me.")
+            st.caption("Track the registration status of every mentor you have personally invited to Mentoring-Me.")
 
             noms = api_get_nominations()
 
@@ -3807,7 +3807,7 @@ else:
                                     f"Hi {n['mentor_name']},\n\n"
                                     f"Hope you are doing well!\n\n"
                                     f"Just wanted to check in to see if you had a chance to look at the mentorship invitation "
-                                    f"I sent recently to connect on Mentor Me:\n\n{p_invite_link}\n\n"
+                                    f"I sent recently to connect on Mentoring-Me:\n\n{p_invite_link}\n\n"
                                     f"I would love to learn from your experience in {n['tech_focus']} if you have the capacity. "
                                     f"No pressure at all — looking forward to hearing from you!\n\n"
                                     f"Warm regards,\n{mentee_name_display}"
@@ -3820,7 +3820,7 @@ else:
                                     help="This follow-up will be sent directly to the mentor's inbox with your Reply-To address attached."
                                 )
 
-                                fu_subject = f"Checking In: Mentorship Invitation from {mentee_name_display} (via Mentor Me)"
+                                fu_subject = f"Checking In: Mentorship Invitation from {mentee_name_display} (via Mentoring-Me)"
                                 
                                 fu_col1, fu_col2 = st.columns([2, 1])
                                 with fu_col1:
@@ -3833,6 +3833,7 @@ else:
                                             st.rerun()
                                         else:
                                             st.error(res)
+                                dangling_close = False
                                 with fu_col2:
                                     if st.button("✖ Close", key=f"close_followup_{n['id']}", use_container_width=True):
                                         st.session_state[toggle_key] = False
@@ -3845,7 +3846,7 @@ else:
             all_hist = api_get_match_history() or []
             female_mentor_count = sum(1 for h in all_hist if h.get('mentor_gender') == 'Female')
             if female_mentor_count > 0:
-                st.success(f"🌟 **{female_mentor_count} active female mentor(s)** are currently registered on Mentor Me. You can connect with them via Platform Matches or the Outreach Hub.")
+                st.success(f"🌟 **{female_mentor_count} active female mentor(s)** are currently registered on Mentoring-Me. You can connect with them via Platform Matches or the Outreach Hub.")
 
             st.markdown("---")
 
@@ -4483,21 +4484,21 @@ else:
                                 avail_template += f"Alternatively, you can book directly on my calendar:\n{mentor['contact_link']}\n\n"
                             avail_template += "Please let me know which slot works best and send a calendar invite once confirmed!\n\nBest regards,\n" + mentor.get('name', '')
                             avail_msg = st.text_area("Edit your availability email:", value=avail_template, height=200, key=f"avail_msg_{conn['id']}")
-                            avail_subject = "Scheduling: Mentor Me Intro Sync"
+                            avail_subject = "Scheduling: Mentoring-Me Intro Sync"
                             avail_mailto = f"mailto:{conn['mentee_email']}?subject={_up_req.quote(avail_subject)}&body={_up_req.quote(avail_msg)}"
                             
-                            m_title_val = f"Mentor Me Intro Sync: {mentor.get('name', 'Mentor')} & {conn['mentee_name']}"
+                            m_title_val = f"Mentoring-Me Intro Sync: {mentor.get('name', 'Mentor')} & {conn['mentee_name']}"
                             m_gcal_url = generate_google_calendar_url(
                                 title=m_title_val,
                                 description=avail_msg,
-                                location="Virtual (Mentor Me Platform)",
+                                location="Virtual (Mentoring-Me Platform)",
                                 start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
                                 end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                             )
                             m_ics_bytes = generate_ics_calendar_file(
                                 title=m_title_val,
                                 description=avail_msg,
-                                location="Virtual (Mentor Me Platform)",
+                                location="Virtual (Mentoring-Me Platform)",
                                 start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
                                 end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                             )
@@ -4525,7 +4526,7 @@ else:
                                 st.download_button(
                                     "📥 .ICS Invite",
                                     data=m_ics_bytes,
-                                    file_name=f"mentor_me_{conn['mentee_name'].replace(' ', '_')}.ics",
+                                    file_name=f"mentoring_me_{conn['mentee_name'].replace(' ', '_')}.ics",
                                     mime="text/calendar",
                                     use_container_width=True,
                                     key=f"download_ics_mentor_{conn['id']}"
@@ -4705,7 +4706,7 @@ else:
             st.subheader("🤝 Pass the Torch — Nominate a Peer Mentor")
             st.caption(
                 "Help expand our pool of senior technical role models and diversity allies. "
-                "Nominate talented colleagues, senior engineers, or researchers from your network to join Mentor Me as mentors."
+                "Nominate talented colleagues, senior engineers, or researchers from your network to join Mentoring-Me as mentors."
             )
 
             # ── Section 1: Nomination Form ────────────────────────────────────
@@ -4749,7 +4750,7 @@ else:
                 c_email_template = (
                     f"Hi {cnom['mentor_name']},\n\n"
                     f"I hope you're having a great week!\n\n"
-                    f"I am currently mentoring on Mentor Me — an equitable mentorship pairing platform dedicated to "
+                    f"I am currently mentoring on Mentoring-Me — an equitable mentorship pairing platform dedicated to "
                     f"connecting and empowering early-career women in technical fields (aligned with UN SDG 5).\n\n"
                     f"Given your strong expertise in {cnom['tech_focus']}, I thought of you immediately and know you would make "
                     f"an incredible mentor and role model for talented junior engineers and researchers on the platform.\n\n"
@@ -4761,7 +4762,7 @@ else:
                 )
                 
                 c_outreach_msg = st.text_area("Invitation Email Body:", value=c_email_template, height=220, key=f"drafted_colleague_msg_{cnom['id']}")
-                c_inv_subj = f"Mentorship Invitation: Join me on Mentor Me — {mentor.get('name', 'A Colleague')}"
+                c_inv_subj = f"Mentorship Invitation: Join me on Mentoring-Me — {mentor.get('name', 'A Colleague')}"
                 c_mailto_url = f"mailto:{cnom['mentor_contact']}?subject={_up_nom.quote(c_inv_subj)}&body={_up_nom.quote(c_outreach_msg)}"
                 
                 c_btn1, c_btn2 = st.columns(2)
@@ -4907,7 +4908,86 @@ else:
             if success:
                 st.success("🎉 Database wiped and reset successfully!")
                 clear_auth_session()
-                st.info("You have been logged out. A clean admin account has been created: **admin@mentorme.demo** with password **adminpassword**.")
+                st.info("You have been logged out. A clean admin account has been created: **admin@mentoring-me.demo** with password **adminpassword**.")
+                if st.button("Proceed to Login"):
+                    st.rerun()
+            else:
+                st.error(f"Failed to reset database: {msg}")hes)
+        em2.metric("✅ Accepted Connections", len(accepted))
+        em3.metric("♀️ Female Mentees", len(set(h['mentee_name'] for h in female_mentee)))
+        em4.metric("♀️ Female Mentors", len(set(h['mentor_name'] for h in female_mentor)))
+
+        st.markdown("")
+        em5, em6, em7, em8 = st.columns(4)
+        ff_rate = f"{int(round(len(ff_pairs)/len(accepted)*100))}%" if accepted else "N/A"
+        ally_rate = f"{int(round(len(ally_boosted)/total_matches*100))}%" if total_matches else "N/A"
+        rep_rate  = f"{int(round(len(rep_boosted)/total_matches*100))}%" if total_matches else "N/A"
+        avg_score = f"{int(round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100))}%" if accepted else "N/A"
+        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections that are female mentee → female mentor")
+        em6.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied")
+        em7.metric("🌟 Rep. Boost Rate", rep_rate, help="% of all matches where the gender representation boost was applied")
+        em8.metric("📈 Avg. Accepted Score", avg_score)
+
+        if total_matches > 0:
+            st.markdown("---")
+            st.markdown("**Career Stage Distribution of Mentees Matched**")
+            tier_counts = {}
+            for h in history:
+                tier = h.get('mentee_exp_tier') or 'Unknown'
+                tier_counts[tier] = tier_counts.get(tier, 0) + 1
+            if tier_counts:
+                tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Count']).sort_values('Count', ascending=False)
+                st.bar_chart(tier_df.set_index('Career Stage'))
+
+            st.markdown("**Country Diversity of Matched Mentors**")
+            country_counts = {}
+            for h in history:
+                c = h.get('mentor_country') or 'Unknown'
+                country_counts[c] = country_counts.get(c, 0) + 1
+            if country_counts:
+                country_df = pd.DataFrame(list(country_counts.items()), columns=['Country', 'Mentors']).sort_values('Mentors', ascending=False).head(10)
+                st.bar_chart(country_df.set_index('Country'))
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION B — Global Match Log
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("📋 Global Platform Matches Log")
+        if not history:
+            st.info("No match transactions exist in the database.")
+        else:
+            admin_list = []
+            for h in history:
+                raw_s = h.get('total_score', 0)
+                pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
+                admin_list.append({
+                    'Match ID': h['id'],
+                    'Mentee': h['mentee_name'],
+                    'Mentor': h['mentor_name'],
+                    'Score': f"{pct_s}%",
+                    'Confidence': h['match_quality'],
+                    'Status': h['status'],
+                    'Rep. Boost': '🌟' if h.get('is_representation_boosted') else '',
+                    'Ally Boost': '🤝' if h.get('is_ally_boosted') else '',
+                    'Date': h['created_at'].split('T')[0] if 'T' in h.get('created_at','') else h.get('created_at','')
+                })
+            st.dataframe(pd.DataFrame(admin_list), use_container_width=True)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION C — System Tools
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("⚙️ System Administration Tools")
+        st.warning("⚠️ **Danger Zone**: Wiping the database is permanent and deletes all users, mentors, mentees, matches, and external invitations.")
+        st.write("This tool allows resetting the database to a completely clean slate, ready for real users to sign up and test.")
+
+        confirm_reset = st.checkbox("I confirm that I want to completely wipe all simulated database records.")
+        if st.button("🔴 Wipe Database & Reset System", type="primary", disabled=not confirm_reset):
+            success, msg = api_reset_database()
+            if success:
+                st.success("🎉 Database wiped and reset successfully!")
+                clear_auth_session()
+                st.info("You have been logged out. A clean admin account has been created: **admin@mentoring-me.demo** with password **adminpassword**.")
                 if st.button("Proceed to Login"):
                     st.rerun()
             else:

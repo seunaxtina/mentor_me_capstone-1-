@@ -72,7 +72,7 @@ def calculate_match_score_and_justifications(mentor_data: dict, mentee: models.M
     return match_percentage, justifications
 
 def evaluate_github_profile(username: str, mentee: models.Mentee):
-    headers = {"User-Agent": "MentorMe-Capstone-App"}
+    headers = {"User-Agent": "Mentoring-Me-App"}
     github_token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_KEY")
     if github_token:
         headers["Authorization"] = f"token {github_token}"

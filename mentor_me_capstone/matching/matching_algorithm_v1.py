@@ -1,5 +1,5 @@
 """
-Mentor Me Capstone — Matching Algorithm & Methodology
+Mentoring-Me Capstone — Matching Algorithm & Methodology
 Weighted Scoring Model v1
 
 APPROACH: Rule-based weighted scoring (see research notes in report — chosen

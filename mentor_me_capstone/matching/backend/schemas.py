@@ -340,7 +340,7 @@ class UnreadMessagesSummary(BaseModel):
 
 # ── Direct Match Email Schemas ──────────────────────────────────────────
 class DirectEmailRequest(BaseModel):
-    subject: str = "Mentor Me Connection Update"
+    subject: str = "Mentoring-Me Connection Update"
     body_text: str
 
 class DirectEmailResponse(BaseModel):

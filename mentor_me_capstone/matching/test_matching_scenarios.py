@@ -1,5 +1,5 @@
 """
-Mentor Me Capstone — Matching Algorithm Scenario Testing
+Mentoring-Me Capstone — Matching Algorithm Scenario Testing
 
 Tests the algorithm against edge cases it needs to handle gracefully in a
 real platform, not just the "happy path" single example tested earlier.

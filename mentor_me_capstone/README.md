@@ -1,4 +1,4 @@
-# Mentor Me — Data Analytics & Matching Algorithm
+# Mentoring-Me — Data Analytics & Matching Algorithm
 
 Work completed for Objective 1 (data analytics) and the Matching Algorithm section.
 

@@ -1,5 +1,5 @@
 """
-Mentor Me Capstone — Matching Algorithm Evaluation
+Mentoring-Me Capstone — Matching Algorithm Evaluation
 
 No ground-truth "correct match" data exists (no historical outcomes to
 validate against), so "accuracy" here is defined operationally as:

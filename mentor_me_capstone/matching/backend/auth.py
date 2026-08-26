@@ -192,12 +192,12 @@ def send_email_via_resend(to_email: str, subject: str, body_text: str, body_html
     if custom_from:
         lower_from = custom_from.lower()
         if any(dom in lower_from for dom in ["@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@icloud.com"]):
-            from_candidates.append("MentorMe <onboarding@resend.dev>")
+            from_candidates.append("Mentoring-Me <onboarding@resend.dev>")
         else:
-            from_candidates.append(f"MentorMe <{custom_from}>" if "<" not in custom_from else custom_from)
-            from_candidates.append("MentorMe <onboarding@resend.dev>")
+            from_candidates.append(f"Mentoring-Me <{custom_from}>" if "<" not in custom_from else custom_from)
+            from_candidates.append("Mentoring-Me <onboarding@resend.dev>")
     else:
-        from_candidates.append("MentorMe <onboarding@resend.dev>")
+        from_candidates.append("Mentoring-Me <onboarding@resend.dev>")
 
     html_content = body_html or f"<div style='font-family: Arial, sans-serif; font-size: 15px; color: #333; line-height: 1.6;'>{body_text.replace(chr(10), '<br>')}</div>"
 
@@ -260,7 +260,7 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
     smtp_password = raw_pass.strip(' "\'') if raw_pass else None
 
     raw_from = os.getenv("SMTP_FROM_EMAIL")
-    smtp_from = raw_from.strip(' "\'') if raw_from else (smtp_user or "support@mentorme.app")
+    smtp_from = raw_from.strip(' "\'') if raw_from else (smtp_user or "support@mentoring-me.app")
 
     if smtp_host and smtp_user and smtp_password:
         try:

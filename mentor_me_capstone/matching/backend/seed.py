@@ -99,7 +99,7 @@ def seed_db():
             mentor_count += 1
             
         user_uuid = f"user-uuid-{resp_id}"
-        email = f"user_{resp_id}@mentorme.demo"
+        email = f"user_{resp_id}@mentoring-me.demo"
         
         users_to_insert.append(models.User(
             id=user_uuid,
@@ -156,7 +156,7 @@ def seed_db():
     admin_uuid = "admin-uuid-001"
     admin_user = models.User(
         id=admin_uuid,
-        email="admin@mentorme.demo",
+        email="admin@mentoring-me.demo",
         password_hash=get_password_hash("adminpassword"),
         role="ADMIN",
         two_factor_enabled=False
@@ -167,7 +167,7 @@ def seed_db():
     print("Database seeding complete!")
     print(f"Seeded Mentees: {mentee_count}")
     print(f"Seeded Mentors: {mentor_count}")
-    print("Admin Account: admin@mentorme.demo / adminpassword")
+    print("Admin Account: admin@mentoring-me.demo / adminpassword")
     print("Sample Account Password: password123")
     db.close()
 

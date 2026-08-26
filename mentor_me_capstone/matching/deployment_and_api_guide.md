@@ -1,12 +1,12 @@
-# 📘 Mentor Me — Complete Pre- & Post-Deployment & API Integration Guide
+# 📘 Mentoring-Me — Complete Pre- & Post-Deployment & API Integration Guide
 
-This guide provides end-to-end instructions for configuring all third-party APIs (Google OAuth, Facebook Login, SMTP Email, AI LLMs, GitHub, ORCID) and deploying the **Mentor Me** platform to production hosting (e.g., Render, Railway, Google Cloud Run, AWS).
+This guide provides end-to-end instructions for configuring all third-party APIs (Google OAuth, Facebook Login, SMTP Email, AI LLMs, GitHub, ORCID) and deploying the **Mentoring-Me** platform to production hosting (e.g., Render, Railway, Google Cloud Run, AWS).
 
 ---
 
 ## 🏛️ Platform Architecture Overview
 
-The Mentor Me application consists of two decoupled components:
+The Mentoring-Me application consists of two decoupled components:
 1. **Backend (FastAPI REST API)**:
    - Handles JWT authentication, bcrypt password hashing, 2FA OTP generation, password reset tokens, SQL database management, weighted matching algorithms, in-app messaging, and external directory integrations.
    - Default local port: `http://127.0.0.1:8000`
@@ -24,16 +24,16 @@ Google OAuth allows users to sign up and sign in with their Google accounts with
 
 #### Steps to configure Google OAuth:
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a new project (e.g., `mentor-me-production`).
+2. Create a new project (e.g., `mentoring-me-production`).
 3. Navigate to **APIs & Services** → **OAuth consent screen**:
    - Select **External** user type and click **Create**.
-   - Fill in **App Name** (`Mentor Me`), **User support email**, and **Developer contact email**.
+   - Fill in **App Name** (`Mentoring-Me`), **User support email**, and **Developer contact email**.
    - Add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
    - In Test Users, add your personal email to test before publishing.
 4. Navigate to **APIs & Services** → **Credentials**:
    - Click **+ CREATE CREDENTIALS** → **OAuth client ID**.
    - Select **Application type**: `Web application`.
-   - Name: `Mentor Me Web Client`.
+   - Name: `Mentoring-Me Web Client`.
    - **Authorized JavaScript origins**:
      - Local development: `http://localhost:8501`
      - Production: `https://your-frontend-app.onrender.com` (or your custom domain)
@@ -55,7 +55,7 @@ Facebook Login allows users to sign up and sign in using their Facebook profile.
 1. Go to [Meta for Developers](https://developers.facebook.com/).
 2. Click **My Apps** → **Create App**.
 3. Select **Authenticate and request data from users with Facebook Login** (or **Consumer** app type).
-4. Enter an App Name (e.g., `Mentor Me`) and Contact Email.
+4. Enter an App Name (e.g., `Mentoring-Me`) and Contact Email.
 5. In the App Dashboard, under **Add products to your app**, locate **Facebook Login** and click **Set Up**.
 6. Select **Web** as the platform.
 7. Go to **Facebook Login** → **Settings** (in left sidebar):
@@ -80,7 +80,7 @@ Enables automated dispatch of 6-digit security codes for Double Authentication (
 1. Go to your [Google Account Security Settings](https://myaccount.google.com/security).
 2. Ensure **2-Step Verification** is turned ON.
 3. Search for **App Passwords** or visit: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
-4. Create an App Password with name `Mentor Me SMTP`.
+4. Create an App Password with name `Mentoring-Me SMTP`.
 5. Google will generate a 16-character password (e.g., `abcd efgh ijkl mnop`).
 6. Add to `.env`:
    ```env
@@ -141,7 +141,7 @@ Render provides a unified cloud hosting platform with free/low-cost tiers for bo
 Ensure your latest codebase is pushed to your GitHub repository:
 ```bash
 git add .
-git commit -m "Mentor Me 20/20 platform release with full messaging, 2FA, and deployment guides"
+git commit -m "Mentoring-Me platform release with full messaging, 2FA, and deployment guides"
 git push origin main
 ```
 
@@ -150,7 +150,7 @@ git push origin main
 2. Click **New +** → **Web Service**.
 3. Connect your GitHub repository.
 4. Configure Backend Settings:
-   - **Name**: `mentor-me-backend`
+   - **Name**: `mentoring-me-backend`
    - **Region**: `Frankfurt` (EU) or `Oregon` (US)
    - **Branch**: `main`
    - **Root Directory**: `matching`
@@ -159,7 +159,7 @@ git push origin main
    - **Start Command**: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
 5. Under **Environment Variables**, add:
    - `SECRET_KEY` = (A secure 64-character random string)
-   - `APP_BASE_URL` = `https://mentor-me-frontend.onrender.com` (Your live frontend public URL)
+   - `APP_BASE_URL` = `https://mentoring-me-frontend.onrender.com` (Your live frontend public URL)
    - `GOOGLE_CLIENT_ID` = `...`
    - `GOOGLE_CLIENT_SECRET` = `...`
    - `FACEBOOK_APP_ID` = `...`
@@ -170,23 +170,23 @@ git push origin main
    - `SMTP_PASSWORD` = `...`
    - `GEMINI_API_KEY` = `...`
    - `GITHUB_TOKEN` = `...`
-6. Click **Create Web Service**. Note your backend URL (e.g. `https://mentor-me-backend.onrender.com`).
+6. Click **Create Web Service**. Note your backend URL (e.g. `https://mentoring-me-backend.onrender.com`).
 
 #### Step 3: Create Streamlit Frontend Web Service
 1. Click **New +** → **Web Service**.
 2. Connect the same repository.
 3. Configure Frontend Settings:
-   - **Name**: `mentor-me-frontend`
+   - **Name**: `mentoring-me-frontend`
    - **Root Directory**: `matching`
    - **Runtime**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true`
 4. Under **Environment Variables**, add:
-   - `APP_BASE_URL` = `https://mentor-me-frontend.onrender.com` (Your live frontend public URL)
-   - `API_URL` = `https://mentor-me-backend.onrender.com/api/v1`
+   - `APP_BASE_URL` = `https://mentoring-me-frontend.onrender.com` (Your live frontend public URL)
+   - `API_URL` = `https://mentoring-me-backend.onrender.com/api/v1`
    - `GOOGLE_CLIENT_ID` = `...`
    - `FACEBOOK_APP_ID` = `...`
-5. Click **Create Web Service**. Note your frontend URL (e.g. `https://mentor-me-frontend.onrender.com`).
+5. Click **Create Web Service**. Note your frontend URL (e.g. `https://mentoring-me-frontend.onrender.com`).
 
 ---
 
@@ -220,20 +220,20 @@ CMD ["streamlit", "run", "app.py", "--server.port", "8501", "--server.address", 
 
 ## 🔒 Part 3: Post-Deployment Steps & Verification
 
-Once your platform is live at your public domain or hosting URL (e.g., `https://mentor-me-frontend.onrender.com`):
+Once your platform is live at your public domain or hosting URL (e.g., `https://mentoring-me-frontend.onrender.com`):
 
 ### Step 1: Update OAuth Redirect URIs
 1. **Google Cloud Console**:
    - Edit your Web Client credentials.
-   - Add to **Authorized JavaScript origins**: `https://mentor-me-frontend.onrender.com`
-   - Add to **Authorized redirect URIs**: `https://mentor-me-frontend.onrender.com`
+   - Add to **Authorized JavaScript origins**: `https://mentoring-me-frontend.onrender.com`
+   - Add to **Authorized redirect URIs**: `https://mentoring-me-frontend.onrender.com`
 2. **Meta for Developers**:
    - Edit Facebook Login Settings.
-   - Add to **Valid OAuth Redirect URIs**: `https://mentor-me-frontend.onrender.com`
+   - Add to **Valid OAuth Redirect URIs**: `https://mentoring-me-frontend.onrender.com`
 
 ### Step 2: Production Database Initialization
-1. Visit your backend interactive documentation: `https://mentor-me-backend.onrender.com/docs`.
-2. The initial database tables and admin user (`admin@mentorme.com` / `adminpassword`) will be auto-generated.
+1. Visit your backend interactive documentation: `https://mentoring-me-backend.onrender.com/docs`.
+2. The initial database tables and admin user (`admin@mentoring-me.demo` / `adminpassword`) will be auto-generated.
 3. Log in as Admin on the frontend and navigate to **Administration** to verify live operations.
 
 ### Step 3: End-to-End Smoke Test Checklist
@@ -253,7 +253,7 @@ Once your platform is live at your public domain or hosting URL (e.g., `https://
 The platform is built with graceful fallbacks. If live OAuth credentials or external directory keys are not provided in `.env`, the system automatically activates simulated flows and curated directories without crashing or blocking users.
 
 **Q2: How can I change the default admin password?**  
-Log in with the default credentials (`admin@mentorme.com` / `adminpassword`), then use the **🔑 Forgot Password?** drawer to set a custom secure password.
+Log in with the default credentials (`admin@mentoring-me.demo` / `adminpassword`), then use the **🔑 Forgot Password?** drawer to set a custom secure password.
 
 **Q3: Can I connect a PostgreSQL database instead of SQLite?**  
 Yes! Provide `DATABASE_URL=postgresql://user:password@host:5432/dbname` in your backend `.env` variables. SQLAlchemy will automatically connect and create tables in PostgreSQL.

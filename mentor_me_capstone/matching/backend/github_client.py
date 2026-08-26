@@ -69,7 +69,7 @@ def search_github_mentors(keyword: str, country: str, mentee: models.Mentee):
     Search GitHub's User directory using official APIs and evaluate match compatibility.
     Falls back gracefully to curated open-source verified mentors on rate-limiting or network issues.
     """
-    headers = {"User-Agent": "MentorMe-Capstone-App"}
+    headers = {"User-Agent": "Mentoring-Me-App"}
     
     github_token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_KEY")
     if github_token:

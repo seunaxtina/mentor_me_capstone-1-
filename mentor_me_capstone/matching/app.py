@@ -516,13 +516,19 @@ st.caption(
     "Sign up or log in to manage your profile and view matches."
 )
 
-# Session State Initialization
+# Session State Initialization & Auto-Restoration on Page Refresh
 if 'access_token' not in st.session_state:
     st.session_state['access_token'] = None
 if 'profile' not in st.session_state:
     st.session_state['profile'] = None
 if 'invite_code' not in st.session_state:
     st.session_state['invite_code'] = None
+
+def clear_auth_session():
+    st.session_state['access_token'] = None
+    st.session_state['profile'] = None
+    if "session_token" in st.query_params:
+        del st.query_params["session_token"]
 
 def fetch_profile():
     if not st.session_state.get('access_token'):
@@ -533,11 +539,18 @@ def fetch_profile():
         if response.status_code == 200:
             st.session_state['profile'] = response.json()
         else:
-            st.session_state['access_token'] = None
-            st.session_state['profile'] = None
+            clear_auth_session()
     except Exception:
-        st.session_state['access_token'] = None
-        st.session_state['profile'] = None
+        clear_auth_session()
+
+# Automatically restore session if page is refreshed
+if not st.session_state.get('access_token'):
+    persisted_token = st.query_params.get("session_token")
+    if persisted_token:
+        st.session_state['access_token'] = persisted_token
+        fetch_profile()
+        if not st.session_state.get('profile'):
+            clear_auth_session()
 
 def get_frontend_base_url():
     explicit = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
@@ -599,10 +612,11 @@ if "code" in st.query_params:
                 user_email = res_data.get('email', '')
                 provider_label = res_data.get('provider', _prov).capitalize()
                 st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}! Please select 'Continue as {role_label} with {provider_label}' on the Sign In tab to enter your dashboard."
-                st.session_state['access_token'] = None
+                clear_auth_session()
                 st.session_state['sso_error'] = None
             else:
                 st.session_state['access_token'] = res_data['access_token']
+                st.query_params["session_token"] = res_data['access_token']
                 st.session_state['two_factor_challenge'] = None
                 st.session_state['sso_error'] = None
                 if 'sso_success_msg' in st.session_state:
@@ -633,6 +647,7 @@ def api_login(email, password):
                 return "2FA_REQUIRED", res_data.get("delivery_hint", "Please complete security verification.")
             else:
                 st.session_state['access_token'] = res_data['access_token']
+                st.query_params["session_token"] = res_data['access_token']
                 st.session_state['two_factor_challenge'] = None
                 fetch_profile()
                 return True, "Login successful!"
@@ -651,6 +666,7 @@ def api_verify_2fa(code):
         if response.status_code == 200:
             res_data = response.json()
             st.session_state['access_token'] = res_data['access_token']
+            st.query_params["session_token"] = res_data['access_token']
             st.session_state['two_factor_challenge'] = None
             st.session_state['two_factor_preview'] = None
             fetch_profile()
@@ -705,6 +721,7 @@ def api_sso_authenticate(provider: str, email: str, name: str = None, picture: s
         if response.status_code == 200:
             res_data = response.json()
             st.session_state['access_token'] = res_data['access_token']
+            st.query_params["session_token"] = res_data['access_token']
             st.session_state['two_factor_challenge'] = None
             st.session_state['two_factor_preview'] = None
             fetch_profile()
@@ -2212,7 +2229,7 @@ else:
         fetch_profile()
         profile = st.session_state['profile']
     if not profile:
-        st.session_state['access_token'] = None
+        clear_auth_session()
         st.rerun()
         
     user = profile['user']
@@ -2238,8 +2255,7 @@ else:
         st.sidebar.info(f"💬 **{tot_unread} unread message(s)** from your connections!")
     
     if st.sidebar.button("🚪 Log Out"):
-        st.session_state['access_token'] = None
-        st.session_state['profile'] = None
+        clear_auth_session()
         st.rerun()
         
     if role == "MENTEE":
@@ -4348,8 +4364,7 @@ else:
             success, msg = api_reset_database()
             if success:
                 st.success("🎉 Database wiped and reset successfully!")
-                st.session_state['access_token'] = None
-                st.session_state['profile'] = None
+                clear_auth_session()
                 st.info("You have been logged out. A clean admin account has been created: **admin@mentorme.demo** with password **adminpassword**.")
                 if st.button("Proceed to Login"):
                     st.rerun()

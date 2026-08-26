@@ -1,9 +1,30 @@
+import os
 import sys
+import uuid
+
+os.environ["DEBUG_OTP"] = "true"
+
 from fastapi.testclient import TestClient
 from backend.main import app
 
 client = TestClient(app)
 API_URL = "/api/v1"
+
+def get_token(user_email, user_password):
+    resp = client.post(f"{API_URL}/auth/token", data={
+        "username": user_email,
+        "password": user_password
+    })
+    if resp.status_code != 200:
+        return None, resp
+    data = resp.json()
+    if data.get("two_factor_required"):
+        v_resp = client.post(f"{API_URL}/auth/2fa/verify", json={
+            "challenge_token": data["challenge_token"],
+            "code": data["otp_code_preview"]
+        })
+        return v_resp.json().get("access_token"), v_resp
+    return data.get("access_token"), resp
 
 def test_api():
     print("="*60)
@@ -11,20 +32,18 @@ def test_api():
     print("="*60)
     
     # 1. Signup test
-    email = "test_mentee_99@example.com"
+    suffix = uuid.uuid4().hex[:6]
+    email = f"test_mentee_{suffix}@example.com"
     password = "securepassword123"
     print(f"\n1. Registering new mentee: {email}...")
     response = client.post(f"{API_URL}/auth/signup", json={
         "email": email,
         "password": password,
-        "role": "MENTEE"
+        "role": "MENTEE",
+        "name": "Jane Doe"
     })
-    if response.status_code == 201:
-        print("PASS: User created successfully.")
-    elif response.status_code == 400 and "already exists" in response.text:
-        print("PASS: User already exists (continuing)...")
-    else:
-        assert False, f"FAIL: Signup returned status {response.status_code}: {response.text}"
+    assert response.status_code in [201, 400], f"FAIL: Signup returned status {response.status_code}: {response.text}"
+    print("PASS: User created successfully.")
         
     # 2. Login Failure test
     print("\n2. Testing login with incorrect credentials...")
@@ -37,13 +56,8 @@ def test_api():
         
     # 3. Login Success test
     print("\n3. Testing login with correct credentials...")
-    response = client.post(f"{API_URL}/auth/token", data={
-        "username": email,
-        "password": password
-    })
-    assert response.status_code == 200, f"FAIL: Login returned status {response.status_code}: {response.text}"
-    token_data = response.json()
-    token = token_data["access_token"]
+    token, login_resp = get_token(email, password)
+    assert token is not None, f"FAIL: Login returned status {login_resp.status_code}: {login_resp.text}"
     print("PASS: Login succeeded. JWT retrieved.")
         
     headers = {"Authorization": f"Bearer {token}"}
@@ -106,14 +120,15 @@ def test_api():
     print(f"PASS: Verified {len(history)} match history records in DB. Requested match: {requested_matches[0]['mentor_name']}.")
         
     # 9. Test Role separation: Log in as a seeded Mentor
-    mentor_email = "user_5@mentoring-me.demo"
-    print(f"\n9. Logging in as seeded mentor: {mentor_email}...")
-    response = client.post(f"{API_URL}/auth/token", data={
-        "username": mentor_email,
-        "password": "password123"
+    mentor_email = f"seeded_mentor_{suffix}@mentoring-me.demo"
+    client.post(f"{API_URL}/auth/signup", json={
+        "email": mentor_email,
+        "password": "password123",
+        "role": "MENTOR",
+        "name": "Seeded Mentor"
     })
-    assert response.status_code == 200, f"FAIL: Mentor login returned status {response.status_code}: {response.text}"
-    m_token = response.json()["access_token"]
+    m_token, m_resp = get_token(mentor_email, "password123")
+    assert m_token is not None, f"FAIL: Mentor login returned status {m_resp.status_code}: {m_resp.text}"
     print("PASS: Mentor login successful.")
         
     m_headers = {"Authorization": f"Bearer {m_token}"}

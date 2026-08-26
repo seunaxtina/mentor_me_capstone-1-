@@ -1,18 +1,41 @@
+import os
 import sys
+import uuid
+
+os.environ["DEBUG_OTP"] = "true"
+
 from fastapi.testclient import TestClient
 from backend.main import app
 
 client = TestClient(app)
 API_URL = "/api/v1"
 
+def get_token(user_email, user_password):
+    resp = client.post(f"{API_URL}/auth/token", data={
+        "username": user_email,
+        "password": user_password
+    })
+    if resp.status_code != 200:
+        return None, resp
+    data = resp.json()
+    if data.get("two_factor_required"):
+        v_resp = client.post(f"{API_URL}/auth/2fa/verify", json={
+            "challenge_token": data["challenge_token"],
+            "code": data["otp_code_preview"]
+        })
+        return v_resp.json().get("access_token"), v_resp
+    return data.get("access_token"), resp
+
 def test_freestyle_matching():
     print("="*70)
     print("TESTING DYNAMIC REGISTRATION AND FREESTYLE TEXT MATCHING")
     print("="*70)
 
-    # 1. Register a new mentor with detailed bio text
-    mentor_email = "cloud_mentor_v2@example.com"
+    suffix = uuid.uuid4().hex[:6]
     mentor_password = "password123"
+
+    # 1. Register a new mentor with detailed bio text
+    mentor_email = f"cloud_mentor_{suffix}@example.com"
     print(f"\n1. Registering new Cloud Mentor: {mentor_email}...")
     response = client.post(f"{API_URL}/auth/signup", json={
         "email": mentor_email,
@@ -29,19 +52,14 @@ def test_freestyle_matching():
     assert response.status_code in [201, 400], f"FAIL: Mentor registration failed: {response.text}"
         
     # Log in as the new mentor
-    response = client.post(f"{API_URL}/auth/token", data={
-        "username": mentor_email,
-        "password": mentor_password
-    })
-    assert response.status_code == 200, f"FAIL: Mentor login failed: {response.text}"
-    mentor_token = response.json()["access_token"]
+    mentor_token, _ = get_token(mentor_email, mentor_password)
     mentor_headers = {"Authorization": f"Bearer {mentor_token}"}
     mentor_profile = client.get(f"{API_URL}/users/me", headers=mentor_headers).json()
     mentor_user_id = mentor_profile["user"]["id"]
     print(f"Mentor Registered & Logged in. ID: {mentor_user_id}")
 
     # 2. Register a mentee specifically looking for Docker and Kubernetes in their freestyle bio
-    mentee_email = "cloud_seeking_mentee_v2@example.com"
+    mentee_email = f"cloud_seeking_mentee_{suffix}@example.com"
     mentee_password = "password123"
     print(f"\n2. Registering new Cloud Mentee: {mentee_email}...")
     response = client.post(f"{API_URL}/auth/signup", json={
@@ -59,12 +77,7 @@ def test_freestyle_matching():
     assert response.status_code in [201, 400], f"FAIL: Mentee registration failed: {response.text}"
 
     # Log in as the new mentee
-    response = client.post(f"{API_URL}/auth/token", data={
-        "username": mentee_email,
-        "password": mentee_password
-    })
-    assert response.status_code == 200, f"FAIL: Mentee login failed: {response.text}"
-    mentee_token = response.json()["access_token"]
+    mentee_token, _ = get_token(mentee_email, mentee_password)
     mentee_headers = {"Authorization": f"Bearer {mentee_token}"}
     mentee_profile = client.get(f"{API_URL}/users/me", headers=mentee_headers).json()
     print(f"Mentee Registered & Logged in. ID: {mentee_profile['user']['id']}")

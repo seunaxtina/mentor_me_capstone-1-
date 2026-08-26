@@ -1,18 +1,41 @@
+import os
 import sys
+import uuid
+
+os.environ["DEBUG_OTP"] = "true"
+
 from fastapi.testclient import TestClient
 from backend.main import app
 
 client = TestClient(app)
 API_URL = "/api/v1"
 
+def get_token(user_email, user_password):
+    resp = client.post(f"{API_URL}/auth/token", data={
+        "username": user_email,
+        "password": user_password
+    })
+    if resp.status_code != 200:
+        return None, resp
+    data = resp.json()
+    if data.get("two_factor_required"):
+        v_resp = client.post(f"{API_URL}/auth/2fa/verify", json={
+            "challenge_token": data["challenge_token"],
+            "code": data["otp_code_preview"]
+        })
+        return v_resp.json().get("access_token"), v_resp
+    return data.get("access_token"), resp
+
 def test_diversity_ally_matching():
     print("="*75)
     print("TESTING DIVERSITY & INCLUSION ALLY MATCHING AND SCORING BOOST")
     print("="*75)
 
-    # 1. Register an Ally Mentor (is_diversity_ally = True)
-    ally_mentor_email = "ally_mentor@example.com"
+    suffix = uuid.uuid4().hex[:6]
     pwd = "password123"
+
+    # 1. Register an Ally Mentor (is_diversity_ally = True)
+    ally_mentor_email = f"ally_mentor_{suffix}@example.com"
     print(f"\n1. Registering Ally Mentor: {ally_mentor_email}...")
     client.post(f"{API_URL}/auth/signup", json={
         "email": ally_mentor_email,
@@ -26,8 +49,7 @@ def test_diversity_ally_matching():
     })
 
     # Log in and fetch Ally Mentor ID
-    response = client.post(f"{API_URL}/auth/token", data={"username": ally_mentor_email, "password": pwd})
-    ally_token = response.json()["access_token"]
+    ally_token, _ = get_token(ally_mentor_email, pwd)
     ally_headers = {"Authorization": f"Bearer {ally_token}"}
     ally_profile = client.get(f"{API_URL}/users/me", headers=ally_headers).json()
     ally_mentor_id = ally_profile["user"]["id"]
@@ -35,7 +57,7 @@ def test_diversity_ally_matching():
     assert ally_profile['mentor']['is_diversity_ally'] is True, "Ally Mentor should be a diversity ally"
 
     # 2. Register a Non-Ally Mentor (is_diversity_ally = False)
-    non_ally_email = "non_ally_mentor@example.com"
+    non_ally_email = f"non_ally_mentor_{suffix}@example.com"
     print(f"\n2. Registering Non-Ally Mentor: {non_ally_email}...")
     client.post(f"{API_URL}/auth/signup", json={
         "email": non_ally_email,
@@ -48,8 +70,7 @@ def test_diversity_ally_matching():
         "is_diversity_ally": False
     })
 
-    response = client.post(f"{API_URL}/auth/token", data={"username": non_ally_email, "password": pwd})
-    non_ally_token = response.json()["access_token"]
+    non_ally_token, _ = get_token(non_ally_email, pwd)
     non_ally_headers = {"Authorization": f"Bearer {non_ally_token}"}
     non_ally_profile = client.get(f"{API_URL}/users/me", headers=non_ally_headers).json()
     non_ally_id = non_ally_profile["user"]["id"]
@@ -57,7 +78,7 @@ def test_diversity_ally_matching():
     assert non_ally_profile['mentor']['is_diversity_ally'] is False, "Non-Ally Mentor should not be a diversity ally"
 
     # 3. Register a Mentee seeking an ally (prefer_diversity_ally = True)
-    mentee_email = "ally_seeking_mentee@example.com"
+    mentee_email = f"ally_seeking_mentee_{suffix}@example.com"
     print(f"\n3. Registering Mentee seeking Ally: {mentee_email}...")
     client.post(f"{API_URL}/auth/signup", json={
         "email": mentee_email,
@@ -70,8 +91,7 @@ def test_diversity_ally_matching():
         "prefer_diversity_ally": True
     })
 
-    response = client.post(f"{API_URL}/auth/token", data={"username": mentee_email, "password": pwd})
-    mentee_token = response.json()["access_token"]
+    mentee_token, _ = get_token(mentee_email, pwd)
     mentee_headers = {"Authorization": f"Bearer {mentee_token}"}
     mentee_profile = client.get(f"{API_URL}/users/me", headers=mentee_headers).json()
     mentee_id = mentee_profile["user"]["id"]

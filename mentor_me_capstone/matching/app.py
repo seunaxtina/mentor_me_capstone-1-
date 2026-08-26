@@ -2988,8 +2988,9 @@ else:
                                         )
 
                                 # ── In-App Direct Chat ─────────────────────────────
-                                with st.expander(f"💬 In-App Direct Chat with {h['mentor_name']}", expanded=True):
-                                    display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mentee_hist_{h['id']}")
+                                with st.popover(f"💬 Open In-App Chat", use_container_width=True):
+                                    st.markdown(f"#### 💬 Direct Chat with **{h['mentor_name']}**")
+                                    display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mentee_pop_{h['id']}")
 
                                 # ── Goal Tracker ──────────────────────────────────
                                 with st.expander(f"📓 Mentorship Journal & Goals — {h['mentor_name']}"):
@@ -4061,9 +4062,9 @@ else:
                                         st.rerun()
                                     else:
                                         st.error("Failed to decline connection.")
-                                 if dec2.button("↩ Cancel", key=f"cancel_decline_{p['id']}", use_container_width=True):
-                                     st.session_state[f"show_decline_dialog_{p['id']}"] = False
-                                     st.rerun()
+                                if dec2.button("↩ Cancel", key=f"cancel_decline_{p['id']}", use_container_width=True):
+                                    st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                                    st.rerun()
             else:
                 st.info("✨ **You're all caught up!** No pending mentee requests awaiting response.")
 
@@ -4184,8 +4185,9 @@ else:
                                     key=f"download_ics_mentor_{conn['id']}"
                                 )
 
-                        with st.expander(f"💬 In-App Direct Chat with {conn['mentee_name']}", expanded=True):
-                            display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_req_{conn['id']}")
+                        with st.popover(f"💬 Open In-App Chat", use_container_width=True):
+                            st.markdown(f"#### 💬 Direct Chat with **{conn['mentee_name']}**")
+                            display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_pop_{conn['id']}")
             else:
                 st.info("No active mentorship connections yet. Once you accept incoming requests above, they will appear here.")
 

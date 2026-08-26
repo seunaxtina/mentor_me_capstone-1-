@@ -1572,11 +1572,14 @@ def render_top_notifications_bell(current_role: str):
     st.write("")
     st.write("")
     history = api_get_match_history() or []
+    unread_msg_summary = api_get_unread_messages() or {}
+    tot_unread_msgs = unread_msg_summary.get('total_unread', 0)
+    unread_by_match = unread_msg_summary.get('by_match', {})
     
     if current_role == "MENTEE":
         unnotified = [m for m in history if m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
-        unread_count = len(unnotified)
-        bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+        total_alerts = len(unnotified) + tot_unread_msgs
+        bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])
@@ -1586,25 +1589,43 @@ def render_top_notifications_bell(current_role: str):
                 if st.button("🔄 Sync", key="mentee_notif_sync_btn", use_container_width=True):
                     st.rerun(scope="fragment")
                     
-            if unread_count == 0:
+            if total_alerts == 0:
                 st.write("No new notifications.")
             else:
-                for unm in unnotified:
-                    button_label = f"🎉 **{unm['mentor_name']}** accepted your mentorship request! (Click to connect)"
-                    if st.button(button_label, key=f"notif_redirect_btn_{unm['id']}", use_container_width=True):
-                        st.session_state['focus_scheduling_match'] = unm['id']
-                        st.rerun()
-                        
-                    c_space, c_dismiss = st.columns([3, 1])
-                    with c_dismiss:
-                        if st.button("Dismiss", key=f"dismiss_notif_mentee_{unm['id']}", use_container_width=True):
-                            if api_mark_match_notified(unm['id']):
-                                st.session_state['profile'] = None
-                                st.rerun(scope="fragment")
+                # 1. Unread Direct Messages alerts
+                if tot_unread_msgs > 0:
+                    st.markdown("**💬 New Direct Messages**")
+                    for mid, count in unread_by_match.items():
+                        if count > 0:
+                            m_obj = next((m for m in history if m['id'] == mid), None)
+                            partner_name = m_obj.get('mentor_name', 'Mentor') if m_obj else 'Your Connection'
+                            msg_alert_btn = f"💬 **{partner_name}** ({count} new message{'s' if count > 1 else ''})"
+                            if st.button(msg_alert_btn, key=f"notif_msg_btn_{mid}_{current_role}", use_container_width=True):
+                                st.session_state['active_chat_match_id'] = mid
+                                st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                st.rerun()
+
+                # 2. Accepted Mentorship Match alerts
+                if unnotified:
+                    if tot_unread_msgs > 0:
+                        st.markdown("---")
+                    st.markdown("**🎯 Mentorship Updates**")
+                    for unm in unnotified:
+                        button_label = f"🎉 **{unm['mentor_name']}** accepted your mentorship request! (Click to connect)"
+                        if st.button(button_label, key=f"notif_redirect_btn_{unm['id']}", use_container_width=True):
+                            st.session_state['focus_scheduling_match'] = unm['id']
+                            st.rerun()
+                            
+                        c_space, c_dismiss = st.columns([3, 1])
+                        with c_dismiss:
+                            if st.button("Dismiss", key=f"dismiss_notif_mentee_{unm['id']}", use_container_width=True):
+                                if api_mark_match_notified(unm['id']):
+                                    st.session_state['profile'] = None
+                                    st.rerun(scope="fragment")
     else:  # MENTOR
         unnotified_reqs = [m for m in history if m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
-        unread_count = len(unnotified_reqs)
-        bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+        total_alerts = len(unnotified_reqs) + tot_unread_msgs
+        bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])
@@ -1614,19 +1635,37 @@ def render_top_notifications_bell(current_role: str):
                 if st.button("🔄 Sync", key="mentor_notif_sync_btn", use_container_width=True):
                     st.rerun(scope="fragment")
                     
-            if unread_count == 0:
+            if total_alerts == 0:
                 st.write("No new notifications.")
             else:
-                for unm in unnotified_reqs:
-                    st.info(f"📩 **{unm['mentee_name']}** requested mentorship!")
-                    subcol1, subcol2 = st.columns([1, 1])
-                    if subcol1.button("👉 Respond", key=f"focus_notif_mentor_{unm['id']}", use_container_width=True):
-                        st.session_state['focus_request_match'] = unm['id']
-                        st.rerun()
-                    if subcol2.button("Dismiss", key=f"dismiss_notif_mentor_{unm['id']}", use_container_width=True):
-                        if api_mark_match_notified(unm['id']):
-                            st.session_state['profile'] = None
-                            st.rerun(scope="fragment")
+                # 1. Unread Direct Messages alerts
+                if tot_unread_msgs > 0:
+                    st.markdown("**💬 New Direct Messages**")
+                    for mid, count in unread_by_match.items():
+                        if count > 0:
+                            m_obj = next((m for m in history if m['id'] == mid), None)
+                            partner_name = m_obj.get('mentee_name', 'Mentee') if m_obj else 'Your Connection'
+                            msg_alert_btn = f"💬 **{partner_name}** ({count} new message{'s' if count > 1 else ''})"
+                            if st.button(msg_alert_btn, key=f"notif_msg_btn_{mid}_{current_role}", use_container_width=True):
+                                st.session_state['active_chat_match_id'] = mid
+                                st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                st.rerun()
+
+                # 2. Incoming Mentorship Requests
+                if unnotified_reqs:
+                    if tot_unread_msgs > 0:
+                        st.markdown("---")
+                    st.markdown("**🎯 Mentorship Requests**")
+                    for unm in unnotified_reqs:
+                        st.info(f"📩 **{unm['mentee_name']}** requested mentorship!")
+                        subcol1, subcol2 = st.columns([1, 1])
+                        if subcol1.button("👉 Respond", key=f"focus_notif_mentor_{unm['id']}", use_container_width=True):
+                            st.session_state['focus_request_match'] = unm['id']
+                            st.rerun()
+                        if subcol2.button("Dismiss", key=f"dismiss_notif_mentor_{unm['id']}", use_container_width=True):
+                            if api_mark_match_notified(unm['id']):
+                                st.session_state['profile'] = None
+                                st.rerun(scope="fragment")
 
 @st.fragment(run_every="5s")
 def render_top_messaging_hub(current_role: str, user_profile: dict, matches_history: list = None):

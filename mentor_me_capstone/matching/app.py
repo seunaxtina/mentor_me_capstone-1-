@@ -444,6 +444,45 @@ def display_mentor_availability(note, mentee_profile_data, mentor_profile_data=N
                 mentor_country = mentor_profile_data
             display_timezone_converter_from_tz(mentee_tz, mentor_tz, mentor_country, mentor_name)
 
+def generate_default_mentee_intro_message(mentor_name, mentee_name, sel_slot=None, availability_note=None):
+    """
+    Generates a context-aware default introductory message acknowledging
+    the mentor's availability and the mentee's selected time slot.
+    """
+    if sel_slot and sel_slot != "None of these work / Coordinate Custom Time":
+        return (
+            f"Hi {mentor_name},\n\n"
+            f"Thank you for accepting my mentorship request and sharing your availability!\n\n"
+            f"I would love to lock in our introductory 25-minute sync for:\n"
+            f"📅 {sel_slot}\n\n"
+            f"I look forward to our conversation and collaborating with you on Mentor Me.\n\n"
+            f"Best regards,\n{mentee_name}"
+        )
+    elif availability_note and ("http" in availability_note.lower() or "calendly" in availability_note.lower() or "cal.com" in availability_note.lower()):
+        return (
+            f"Hi {mentor_name},\n\n"
+            f"Thank you for accepting my mentorship request! I received your scheduling link and will book our introductory 25-minute sync there.\n\n"
+            f"Looking forward to connecting with you!\n\n"
+            f"Best regards,\n{mentee_name}"
+        )
+    elif sel_slot == "None of these work / Coordinate Custom Time":
+        return (
+            f"Hi {mentor_name},\n\n"
+            f"Thank you for accepting my mentorship request and sharing your availability!\n\n"
+            f"The proposed slots don't quite fit my schedule this week. Could we explore an alternative time for our introductory 25-minute sync? Here are a few times when I am free:\n"
+            f"- [Insert Option 1]\n"
+            f"- [Insert Option 2]\n\n"
+            f"Looking forward to connecting!\n\n"
+            f"Best regards,\n{mentee_name}"
+        )
+    else:
+        return (
+            f"Hi {mentor_name},\n\n"
+            f"Thank you for accepting my mentorship request! I am excited to connect with you on Mentor Me.\n\n"
+            f"Please let me know a few days and times that work best for our introductory 25-minute sync, or feel free to share your calendar scheduling link.\n\n"
+            f"Best regards,\n{mentee_name}"
+        )
+
 # Reference dropdown options from the dataset
 COUNTRIES = [
     "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria",
@@ -2408,24 +2447,31 @@ else:
                 st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{f_match_id}_{sel_slot}", label_visibility="collapsed")
                 st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
                 
-                import urllib.parse
-                coordinate_subject = "Scheduling: Mentor Me Intro Call"
-                coordinate_body = (
-                    f"Hi {f_match['mentor_name']},\n\n"
-                    f"I am excited to connect with you as my mentor on Mentor Me!\n\n"
-                    f"Please let me know a few days and times that work best for our introductory 25-minute call, "
-                    f"or feel free to send your calendar scheduling link if you have one. Once we select a slot, "
-                    f"I will send over a calendar invite.\n\n"
-                    f"Best regards,\n{mentee['name']}"
+                st.markdown("### ✉️ Introductory Message to Mentor")
+                st.caption("Personalize this message before sending it via In-App Chat or Email:")
+                default_intro_text = generate_default_mentee_intro_message(
+                    mentor_name=f_match['mentor_name'],
+                    mentee_name=mentee['name'],
+                    sel_slot=sel_slot,
+                    availability_note=f_match.get('availability_note')
                 )
+                edited_intro_msg = st.text_area(
+                    "Introductory Message",
+                    value=default_intro_text,
+                    height=180,
+                    key=f"edit_intro_msg_{f_match_id}_{sel_slot}",
+                    label_visibility="collapsed"
+                )
+                coordinate_subject = f"Scheduling: Mentor Me Intro Call — {mentee['name']} & {f_match['mentor_name']}"
+
                 st.markdown("**Choose Your Communication Channel:**")
                 coord_col1, coord_col2 = st.columns(2)
                 with coord_col1:
                     with st.popover("💬 Chat Directly on Platform", use_container_width=True):
                         st.markdown(f"#### 💬 Direct Chat with **{f_match['mentor_name']}**")
-                        st.caption("You can type custom messages below or send the introductory note with one click.")
-                        if st.button("🚀 Send Proposed Intro Note to In-App Chat", key=f"quick_send_coord_{f_match_id}", use_container_width=True):
-                            ok_s, res_s = api_send_message(f_match_id, coordinate_body)
+                        st.caption("Send your personalized introductory note directly to the in-app chat with one click:")
+                        if st.button("🚀 Send Introductory Note to In-App Chat", key=f"quick_send_coord_{f_match_id}", use_container_width=True):
+                            ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
                             if ok_s:
                                 st.success(f"Introductory note sent to {f_match['mentor_name']} via in-app chat!")
                                 st.rerun()
@@ -2434,7 +2480,7 @@ else:
                         display_in_app_chat(f_match_id, f_match['mentor_name'], "MENTEE", key_suffix=f"focus_chat_{f_match_id}")
                 with coord_col2:
                     if st.button(f"✉️ Send Email to {f_match['mentor_name']}", key=f"focus_send_email_{f_match_id}", use_container_width=True):
-                        ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, coordinate_body)
+                        ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, edited_intro_msg)
                         if ok_e:
                             st.success(f"✅ {msg_e}")
                         else:
@@ -2978,16 +3024,23 @@ else:
                                     st.markdown("**Copy / Edit Calendar Event Details:**")
                                     st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{h['id']}_{sel_slot}", label_visibility="collapsed")
                                     st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
-                                    coordinate_subject = "Scheduling: Mentor Me Intro Call"
-                                    coordinate_body = (
-                                        f"Hi {h['mentor_name']},\n\n"
-                                        f"I am excited to connect with you as my mentor on Mentor Me!\n\n"
-                                        f"Please let me know a few days and times that work best for our introductory 25-minute call, "
-                                        f"or feel free to send your calendar scheduling link if you have one. Once we select a slot, "
-                                        f"I will send over a calendar invite.\n\n"
-                                        f"Best regards,\n{mentee['name']}"
+                                    
+                                    st.markdown("### ✉️ Introductory Message to Mentor")
+                                    st.caption("Personalize this message before sending it via In-App Chat or Email:")
+                                    h_default_intro = generate_default_mentee_intro_message(
+                                        mentor_name=h['mentor_name'],
+                                        mentee_name=mentee['name'],
+                                        sel_slot=sel_slot,
+                                        availability_note=h.get('availability_note')
                                     )
-                                    mailto_coord_url = f"mailto:{h['mentor_email']}?subject={_up_hist.quote(coordinate_subject)}&body={_up_hist.quote(coordinate_body)}"
+                                    h_edited_intro_msg = st.text_area(
+                                        "Introductory Message",
+                                        value=h_default_intro,
+                                        height=180,
+                                        key=f"edit_mhist_intro_{h['id']}_{sel_slot}",
+                                        label_visibility="collapsed"
+                                    )
+                                    coordinate_subject = f"Scheduling: Mentor Me Intro Call — {mentee['name']} & {h['mentor_name']}"
                                     
                                     # Google Calendar and ICS Calendar generators
                                     gcal_url = generate_google_calendar_url(
@@ -3009,9 +3062,9 @@ else:
                                     with cal_btn1:
                                         with st.popover("💬 Chat on Platform", use_container_width=True):
                                             st.markdown(f"#### 💬 Direct Chat with **{h['mentor_name']}**")
-                                            st.caption("Coordinate meeting times directly within the platform.")
-                                            if st.button("🚀 Send Proposed Times to Chat", key=f"quick_send_mhist_{h['id']}", use_container_width=True):
-                                                ok_s, res_s = api_send_message(h['id'], coordinate_body)
+                                            st.caption("Send your personalized introductory note directly into the chat:")
+                                            if st.button("🚀 Send Note to In-App Chat", key=f"quick_send_mhist_{h['id']}", use_container_width=True):
+                                                ok_s, res_s = api_send_message(h['id'], h_edited_intro_msg)
                                                 if ok_s:
                                                     st.success(f"Meeting note sent to {h['mentor_name']} via in-app chat!")
                                                     st.rerun()
@@ -3020,7 +3073,7 @@ else:
                                             display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mhist_cal_chat_{h['id']}")
                                     with cal_btn2:
                                         if st.button(f"✉️ Send Email", key=f"mhist_send_email_{h['id']}", use_container_width=True):
-                                            ok_e, msg_e = api_send_direct_match_email(h['id'], coordinate_subject, coordinate_body)
+                                            ok_e, msg_e = api_send_direct_match_email(h['id'], coordinate_subject, h_edited_intro_msg)
                                             if ok_e:
                                                 st.success(f"✅ {msg_e}")
                                             else:

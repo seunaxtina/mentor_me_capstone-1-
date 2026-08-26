@@ -2659,7 +2659,7 @@ else:
         unnotified = [m for m in history if m['status'] == 'ACCEPTED' and not m.get('mentee_notified', False)]
         unread_count = len(unnotified)
         
-        col_greet, col_chat, col_bell = st.columns([6, 2, 2])
+        col_greet, col_bell = st.columns([8, 2])
         with col_greet:
             display_welcome_header(mentee['name'], mentee['id'])
             if st.button("📸 Edit Profile Photo", key="mentee_avatar_toggle"):
@@ -2695,12 +2695,11 @@ else:
                     if st.button("❌ Close Photo Drawer", key="mentee_close_uploader_btn"):
                         st.session_state['show_pic_uploader'] = False
                         st.rerun()
-        with col_chat:
-            render_top_messaging_hub("MENTEE", profile, history)
         with col_bell:
             render_top_notifications_bell("MENTEE")
         
-        tab_setup, tab_match, tab_messages, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", "💬 Direct Messages", "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
+        msg_tab_label = f"💬 Direct Messages ({tot_unread})" if tot_unread > 0 else "💬 Direct Messages"
+        tab_setup, tab_match, tab_messages, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", msg_tab_label, "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
         
         with tab_setup:
             st.subheader("Profile Details")
@@ -3988,7 +3987,7 @@ else:
         unnotified_reqs = [m for m in history if m['status'] == 'REQUESTED' and not m.get('mentor_notified', False)]
         unread_count = len(unnotified_reqs)
         
-        col_greet, col_chat, col_bell = st.columns([6, 2, 2])
+        col_greet, col_bell = st.columns([8, 2])
         with col_greet:
             display_welcome_header(mentor['name'], mentor['id'])
             if st.button("📸 Edit Profile Photo", key="mentor_avatar_toggle"):
@@ -4024,12 +4023,11 @@ else:
                     if st.button("❌ Close Photo Drawer", key="mentor_close_uploader_btn"):
                         st.session_state['show_pic_uploader'] = False
                         st.rerun()
-        with col_chat:
-            render_top_messaging_hub("MENTOR", profile, history)
         with col_bell:
             render_top_notifications_bell("MENTOR")
         
-        tab_setup, tab_requests, tab_messages_m, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "💬 Direct Messages", "📜 Match History", "🤝 Nominate a Colleague"])
+        msg_tab_label_m = f"💬 Direct Messages ({tot_unread})" if tot_unread > 0 else "💬 Direct Messages"
+        tab_setup, tab_requests, tab_messages_m, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", msg_tab_label_m, "📜 Match History", "🤝 Nominate a Colleague"])
         
         with tab_setup:
             st.subheader("Profile Details")

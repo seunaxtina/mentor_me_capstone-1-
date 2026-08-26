@@ -1,7 +1,9 @@
-import requests
 import sys
+from fastapi.testclient import TestClient
+from backend.main import app
 
-API_URL = "http://127.0.0.1:8000/api/v1"
+client = TestClient(app)
+API_URL = "/api/v1"
 
 def test_freestyle_matching():
     print("="*70)
@@ -12,7 +14,7 @@ def test_freestyle_matching():
     mentor_email = "cloud_mentor_v2@example.com"
     mentor_password = "password123"
     print(f"\n1. Registering new Cloud Mentor: {mentor_email}...")
-    response = requests.post(f"{API_URL}/auth/signup", json={
+    response = client.post(f"{API_URL}/auth/signup", json={
         "email": mentor_email,
         "password": mentor_password,
         "role": "MENTOR",
@@ -24,76 +26,74 @@ def test_freestyle_matching():
         "org_size": "100 to 499 employees",
         "additional_details": "I can help with AWS cloud architecture, Docker containers, Kubernetes deployments, and Python backend scripts."
     })
-    if response.status_code not in [201, 400]:
-        print(f"FAIL: Mentor registration failed: {response.text}")
-        sys.exit(1)
+    assert response.status_code in [201, 400], f"FAIL: Mentor registration failed: {response.text}"
         
-    # Log in to get mentor ID
-    response = requests.post(f"{API_URL}/auth/token", data={
+    # Log in as the new mentor
+    response = client.post(f"{API_URL}/auth/token", data={
         "username": mentor_email,
         "password": mentor_password
     })
+    assert response.status_code == 200, f"FAIL: Mentor login failed: {response.text}"
     mentor_token = response.json()["access_token"]
     mentor_headers = {"Authorization": f"Bearer {mentor_token}"}
-    mentor_profile = requests.get(f"{API_URL}/users/me", headers=mentor_headers).json()
-    mentor_id = mentor_profile["user"]["id"]
-    print(f"PASS: Cloud Mentor set up. DB ID: {mentor_id}")
+    mentor_profile = client.get(f"{API_URL}/users/me", headers=mentor_headers).json()
+    mentor_user_id = mentor_profile["user"]["id"]
+    print(f"Mentor Registered & Logged in. ID: {mentor_user_id}")
 
-    # 2. Register a new mentee with matching keywords in freestyle details
-    mentee_email = "cloud_mentee_v2@example.com"
+    # 2. Register a mentee specifically looking for Docker and Kubernetes in their freestyle bio
+    mentee_email = "cloud_seeking_mentee_v2@example.com"
     mentee_password = "password123"
     print(f"\n2. Registering new Cloud Mentee: {mentee_email}...")
-    response = requests.post(f"{API_URL}/auth/signup", json={
+    response = client.post(f"{API_URL}/auth/signup", json={
         "email": mentee_email,
         "password": mentee_password,
         "role": "MENTEE",
-        "name": "Cloud Mentee Anna",
+        "name": "Cloud Mentee Sarah",
         "country": "United States",
-        "dev_type": "DevOps specialist",
+        "dev_type": "Developer, full-stack",
         "years_code_pro": 1.0,
         "job_factors": "Remote work options;Opportunities for professional development",
         "org_size": "100 to 499 employees",
-        "additional_details": "I want to learn about Docker containerization and Kubernetes cluster management."
+        "additional_details": "Looking for guidance in AWS cloud services, Docker containerization, and learning Kubernetes."
     })
-    if response.status_code not in [201, 400]:
-        print(f"FAIL: Mentee registration failed: {response.text}")
-        sys.exit(1)
-        
-    # Log in
-    response = requests.post(f"{API_URL}/auth/token", data={
+    assert response.status_code in [201, 400], f"FAIL: Mentee registration failed: {response.text}"
+
+    # Log in as the new mentee
+    response = client.post(f"{API_URL}/auth/token", data={
         "username": mentee_email,
         "password": mentee_password
     })
+    assert response.status_code == 200, f"FAIL: Mentee login failed: {response.text}"
     mentee_token = response.json()["access_token"]
     mentee_headers = {"Authorization": f"Bearer {mentee_token}"}
-    print("PASS: Cloud Mentee set up.")
+    mentee_profile = client.get(f"{API_URL}/users/me", headers=mentee_headers).json()
+    print(f"Mentee Registered & Logged in. ID: {mentee_profile['user']['id']}")
 
-    # 3. Query matches
-    print("\n3. Querying matches for the new mentee...")
-    response = requests.get(f"{API_URL}/matches?limit=1500", headers=mentee_headers)
-    if response.status_code != 200:
-        print(f"FAIL: Matches call failed: {response.text}")
-        sys.exit(1)
-        
+    # 3. Fetch Matches for the Mentee
+    print("\n3. Querying match recommendations for Cloud Mentee Sarah...")
+    response = client.get(f"{API_URL}/matches?limit=10", headers=mentee_headers)
+    assert response.status_code == 200, f"FAIL: Matching request failed: {response.text}"
     matches = response.json()
-    
-    # Find our new mentor in the list
-    matched_mentor = None
+    print(f"Found {len(matches)} match recommendations.")
+
+    # 4. Verify that Cloud Mentor Dave is matched with high synergy
+    matched_dave = None
     for m in matches:
-        if m["mentor_id"] == mentor_id:
-            matched_mentor = m
+        if m["mentor_id"] == mentor_user_id:
+            matched_dave = m
             break
-            
-    if matched_mentor:
-        print(f"PASS: Found 'Cloud Mentor Dave' in matches!")
-        print(f"  Total Match Score: {matched_mentor['total_score']} ({matched_mentor['match_quality']})")
-        print(f"  Note: Since freestyle text was supplied, the weight distribution was dynamically shifted to include freestyle Jaccard overlap (10% weight).")
-    else:
-        print("FAIL: The newly registered Cloud Mentor was not found in the match list.")
-        sys.exit(1)
-        
+
+    assert matched_dave is not None, "FAIL: Cloud Mentor Dave was not found in match recommendations!"
+    print(f"PASS: Cloud Mentor Dave successfully matched!")
+    print(f"  Match Score: {matched_dave['total_score']} ({matched_dave['match_quality']})")
+    print(f"  Goals/Synergy Score: {matched_dave['goals_score']}")
+
+    # Check that goals_score reflects the semantic text overlap
+    assert matched_dave['goals_score'] > 0.4, f"FAIL: Expected significant synergy score due to Docker/Kubernetes/AWS overlap, got {matched_dave['goals_score']}"
+    print("PASS: Freestyle bio text keyword synergy contributed positively to the match score.")
+
     print("\n" + "="*70)
-    print("ALL DYNAMIC REGISTRATION AND FREESTYLE TEXT MATCHING TESTS PASSED!")
+    print("ALL DYNAMIC & FREESTYLE TEXT MATCHING TESTS PASSED SUCCESSFULLY!")
     print("="*70)
 
 if __name__ == '__main__':

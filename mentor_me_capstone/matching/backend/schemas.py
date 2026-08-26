@@ -337,3 +337,14 @@ class UnreadMessagesSummary(BaseModel):
     total_unread: int
     by_match: dict
 
+
+# ── Direct Match Email Schemas ──────────────────────────────────────────
+class DirectEmailRequest(BaseModel):
+    subject: str = "Mentor Me Connection Update"
+    body_text: str
+
+class DirectEmailResponse(BaseModel):
+    status: str
+    message: str
+    recipient_email: str
+

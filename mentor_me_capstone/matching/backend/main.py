@@ -2183,3 +2183,65 @@ def reset_database(
         return {"message": "Database successfully wiped and reset to a clean state."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database reset failed: {str(e)}")
+
+
+@app.post("/api/v1/matches/{match_id}/send-email", response_model=schemas.DirectEmailResponse)
+def send_direct_match_email(
+    match_id: str,
+    req: schemas.DirectEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    match = db.query(models.Match).filter(models.Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    mentor_user = db.query(models.User).filter(models.User.id == match.mentor_id).first()
+    mentee_user = db.query(models.User).filter(models.User.id == match.mentee_id).first()
+    mentor_prof = db.query(models.Mentor).filter(models.Mentor.id == match.mentor_id).first()
+    mentee_prof = db.query(models.Mentee).filter(models.Mentee.id == match.mentee_id).first()
+
+    if not mentor_user or not mentee_user:
+        raise HTTPException(status_code=404, detail="Matched user accounts not found")
+
+    if current_user.id == mentee_user.id:
+        recipient_email = mentor_user.email
+        recipient_name = mentor_prof.name if mentor_prof and mentor_prof.name else "Mentor"
+        sender_name = mentee_prof.name if mentee_prof and mentee_prof.name else "Mentee"
+    elif current_user.id == mentor_user.id:
+        recipient_email = mentee_user.email
+        recipient_name = mentee_prof.name if mentee_prof and mentee_prof.name else "Mentee"
+        sender_name = mentor_prof.name if mentor_prof and mentor_prof.name else "Mentor"
+    else:
+        raise HTTPException(status_code=403, detail="You are not authorized to send messages for this match")
+
+    if not req.body_text or not req.body_text.strip():
+        raise HTTPException(status_code=400, detail="Email body cannot be empty")
+
+    subject = req.subject.strip() or f"Mentor Me: Message from {sender_name}"
+
+    # Dispatch email with Reply-To set to current user's email so recipient can reply directly
+    auth.send_email_notification(
+        to_email=recipient_email,
+        subject=subject,
+        body_text=req.body_text.strip(),
+        reply_to=current_user.email
+    )
+
+    try:
+        os.makedirs("uploads", exist_ok=True)
+        log_path = f"uploads/email_match_{match_id}.txt"
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(f"TO: {recipient_email}\n")
+            f.write(f"REPLY-TO: {current_user.email}\n")
+            f.write(f"SUBJECT: {subject}\n")
+            f.write(f"BODY:\n{req.body_text.strip()}\n")
+    except Exception as e:
+        print(f"[MOCK SMTP] Failed to log match email: {e}")
+
+    return {
+        "status": "success",
+        "message": f"Email successfully dispatched to {recipient_name} ({recipient_email})!",
+        "recipient_email": recipient_email
+    }
+

@@ -162,6 +162,46 @@ class TestInAppMessagingFlow(unittest.TestCase):
         self.assertEqual(send_resp.status_code, 403)
         print("PASS: Unauthorized third party strictly blocked with 403 Forbidden.")
 
+    def test_05_direct_match_email_dispatch(self):
+        # Mentee sends direct email to mentor via platform
+        email_resp = client.post(
+            f"/api/v1/matches/{self.match_id}/send-email",
+            json={
+                "subject": "Scheduling: First Mentorship Session",
+                "body_text": "Hi Dr. Bob, looking forward to our session next Tuesday at 2 PM UTC."
+            },
+            headers={"Authorization": f"Bearer {self.mentee_token}"}
+        )
+        self.assertEqual(email_resp.status_code, 200)
+        self.assertEqual(email_resp.json()["status"], "success")
+        self.assertEqual(email_resp.json()["recipient_email"], self.mentor_email)
+        print("PASS: Mentee seamlessly dispatched direct email to mentor through platform backend.")
+
+        # Mentor sends direct reply email to mentee via platform
+        mentor_email_resp = client.post(
+            f"/api/v1/matches/{self.match_id}/send-email",
+            json={
+                "subject": "Re: Scheduling: First Mentorship Session",
+                "body_text": "Hi Alice, Tuesday at 2 PM UTC works perfectly. See you then!"
+            },
+            headers={"Authorization": f"Bearer {self.mentor_token}"}
+        )
+        self.assertEqual(mentor_email_resp.status_code, 200)
+        self.assertEqual(mentor_email_resp.json()["status"], "success")
+        self.assertEqual(mentor_email_resp.json()["recipient_email"], self.mentee_email)
+        print("PASS: Mentor seamlessly dispatched direct reply email to mentee through platform backend.")
+
+    def test_06_unauthorized_direct_email_blocked(self):
+        # Charlie attempts to send email on Alice and Bob's match
+        unauth_resp = client.post(
+            f"/api/v1/matches/{self.match_id}/send-email",
+            json={"subject": "Spam", "body_text": "Unauthorized message"},
+            headers={"Authorization": f"Bearer {self.third_token}"}
+        )
+        self.assertEqual(unauth_resp.status_code, 403)
+        print("PASS: Unauthorized user strictly blocked from sending match emails.")
+
 if __name__ == "__main__":
-    print("\n--- Test Suite: In-App Direct Messaging ---")
+    print("\n--- Test Suite: In-App Direct Messaging & Email Dispatch ---")
     unittest.main()
+

@@ -824,8 +824,27 @@ def api_send_nomination_followup(nomination_id, custom_message=None, subject=Non
             try:
                 detail = response.json().get('detail', response.text)
             except Exception:
-                detail = response.text or f"Status {response.status_code}"
+                detail = response.text or f"Server returned status {response.status_code}"
             return False, f"Failed to send follow-up: {detail}"
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
+def api_send_direct_match_email(match_id, subject, body_text):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    payload = {
+        "subject": subject,
+        "body_text": body_text
+    }
+    try:
+        response = api_http.post(f"{API_URL}/matches/{match_id}/send-email", json=payload, headers=headers)
+        if response.status_code == 200:
+            return True, response.json().get('message', 'Email sent successfully!')
+        else:
+            try:
+                detail = response.json().get('detail', response.text)
+            except Exception:
+                detail = response.text or f"Status {response.status_code}"
+            return False, f"Failed to send email: {detail}"
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
@@ -2414,13 +2433,12 @@ else:
                                 st.error(res_s)
                         display_in_app_chat(f_match_id, f_match['mentor_name'], "MENTEE", key_suffix=f"focus_chat_{f_match_id}")
                 with coord_col2:
-                    mailto_coord_url = f"mailto:{f_match['mentor_email']}?subject={urllib.parse.quote(coordinate_subject)}&body={urllib.parse.quote(coordinate_body)}"
-                    st.markdown(
-                        f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;">'
-                        f'<button style="background-color:#4A90E2; color:white; border:none; padding:9px 16px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.9rem;">'
-                        f'✉️ Email Mentor</button></a>',
-                        unsafe_allow_html=True
-                    )
+                    if st.button(f"✉️ Send Email to {f_match['mentor_name']}", key=f"focus_send_email_{f_match_id}", use_container_width=True):
+                        ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, coordinate_body)
+                        if ok_e:
+                            st.success(f"✅ {msg_e}")
+                        else:
+                            st.error(msg_e)
                 
                 if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
                     api_mark_match_notified(f_match_id)
@@ -3001,12 +3019,12 @@ else:
                                                     st.error(res_s)
                                             display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mhist_cal_chat_{h['id']}")
                                     with cal_btn2:
-                                        st.markdown(
-                                            f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;">'
-                                            f'<button style="background-color:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
-                                            f'✉️ Email Mentor</button></a>',
-                                            unsafe_allow_html=True
-                                        )
+                                        if st.button(f"✉️ Send Email", key=f"mhist_send_email_{h['id']}", use_container_width=True):
+                                            ok_e, msg_e = api_send_direct_match_email(h['id'], coordinate_subject, coordinate_body)
+                                            if ok_e:
+                                                st.success(f"✅ {msg_e}")
+                                            else:
+                                                st.error(msg_e)
                                     with cal_btn3:
                                         st.link_button("📅 Google Calendar", gcal_url, use_container_width=True)
                                     with cal_btn4:
@@ -3356,15 +3374,14 @@ else:
                                     )
                                     outreach_message = st.text_area("Edit your invitation message:", value=email_template, height=200, key=f"drafted_outreach_msg_outreach_{idx}")
                                     inv_subject = "Mentorship Invitation - Mentor Me"
-                                    mailto_url = f"mailto:{nom['mentor_contact']}?subject={_up.quote(inv_subject)}&body={_up.quote(outreach_message)}"
                                     btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
-                                        st.markdown(
-                                            f'<a href="{mailto_url}" target="_blank" style="text-decoration:none;">'
-                                            f'<button style="background:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%;">'
-                                            f'✉️ Open in Email Client</button></a>',
-                                            unsafe_allow_html=True
-                                        )
+                                        if st.button("✉️ Send Invitation Email", key=f"send_nom_email_btn_{idx}", use_container_width=True):
+                                            ok_n, res_n = api_send_nomination_followup(nom['id'], outreach_message, inv_subject)
+                                            if ok_n:
+                                                st.success(f"✅ Invitation email dispatched to {nom['mentor_contact']}!")
+                                            else:
+                                                st.error(res_n)
                                     with btn_c2:
                                         if st.button("✖ Close Designer", key=f"clear_nom_card_outreach_{idx}", use_container_width=True):
                                             del st.session_state[f'nomination_outreach_{idx}']
@@ -4211,12 +4228,12 @@ else:
                                             st.error(res_s)
                                     display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_cal_chat_{conn['id']}")
                             with m_col2:
-                                st.markdown(
-                                    f'<a href="{avail_mailto}" target="_blank" style="text-decoration:none;">'
-                                    f'<button style="background:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
-                                    f'✉️ Email Mentee</button></a>',
-                                    unsafe_allow_html=True
-                                )
+                                if st.button(f"✉️ Send Email", key=f"mentor_send_email_{conn['id']}", use_container_width=True):
+                                    ok_e, msg_e = api_send_direct_match_email(conn['id'], avail_subject, avail_msg)
+                                    if ok_e:
+                                        st.success(f"✅ {msg_e}")
+                                    else:
+                                        st.error(msg_e)
                             with m_col3:
                                 st.link_button("📅 Google Calendar", m_gcal_url, use_container_width=True)
                             with m_col4:
@@ -4454,12 +4471,12 @@ else:
                 
                 c_btn1, c_btn2 = st.columns(2)
                 with c_btn1:
-                    st.markdown(
-                        f'<a href="{c_mailto_url}" target="_blank" style="text-decoration:none;">'
-                        f'<button style="background:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%;">'
-                        f'✉️ Open in Email Client</button></a>',
-                        unsafe_allow_html=True
-                    )
+                    if st.button("✉️ Send Invitation Email", key=f"send_colleague_nom_btn_{cnom['id']}", use_container_width=True):
+                        ok_cn, res_cn = api_send_nomination_followup(cnom['id'], c_outreach_msg, c_inv_subj)
+                        if ok_cn:
+                            st.success(f"✅ Invitation email successfully dispatched to {cnom['mentor_name']} ({cnom['mentor_contact']})!")
+                        else:
+                            st.error(res_cn)
                 with c_btn2:
                     if st.button("✖ Close Email Designer", key="close_colleague_designer_btn", use_container_width=True):
                         del st.session_state['latest_colleague_nomination']

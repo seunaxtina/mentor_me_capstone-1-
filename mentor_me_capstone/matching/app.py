@@ -1981,7 +1981,7 @@ def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix=
         </div>
     """, unsafe_allow_html=True)
     
-    btn_label = "🌐 Continue with Google" if mode == "signin" else f"🌐 Register as {clean_role.capitalize()} with Google"
+    btn_label = f"🌐 Continue as {clean_role.capitalize()} with Google" if mode == "signin" else f"🌐 Register as {clean_role.capitalize()} with Google"
     if google_url and "accounts.google.com" in google_url:
         st.link_button(btn_label, google_url, use_container_width=True)
     else:
@@ -2077,7 +2077,16 @@ if st.session_state['access_token'] is None:
                         st.error(msg)
                         
             # SSO Options for Sign In
-            render_sso_gateway_section(default_role="MENTEE", key_suffix="signin")
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            signin_role_choice = st.radio(
+                "Continue with Google as:",
+                options=["🌱 Mentee (seeking guidance)", "🧭 Mentor (sharing expertise)"],
+                index=0,
+                horizontal=True,
+                key="social_signin_role_radio"
+            )
+            s_in_role = "MENTOR" if "Mentor" in signin_role_choice else "MENTEE"
+            render_sso_gateway_section(default_role=s_in_role, mode="signin", key_suffix="signin")
             
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
             with st.expander("🔑 Forgot Password?", expanded=False):

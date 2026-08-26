@@ -8,6 +8,7 @@ import pandas as pd
 import datetime
 import os
 import sys
+import secrets
 import jwt
 from dotenv import load_dotenv
 
@@ -674,9 +675,78 @@ def reset_password(req: schemas.ResetPasswordRequest, db: Session = Depends(get_
         message="Your password has been successfully reset! You can now log in with your new password."
     )
 
+def ensure_user_profile(user: models.User, target_role: str, db: Session, name: str = None, picture: str = None):
+    """
+    Ensures that the corresponding sub-profile table (models.Mentor or models.Mentee)
+    exists and is populated for the given user and role, transferring any available
+    profile details if migrating between roles.
+    """
+    display_name = name or user.name or (user.email.split("@")[0].capitalize() if user.email else "User")
+    avatar = picture or user.avatar_url
+    
+    if target_role == "MENTOR":
+        mentor = db.query(models.Mentor).filter(models.Mentor.id == user.id).first()
+        if not mentor:
+            mentee = db.query(models.Mentee).filter(models.Mentee.id == user.id).first()
+            years = float(mentee.years_code_pro if mentee and mentee.years_code_pro is not None else 5.0)
+            if years <= 2: exp_tier = '0-2y'
+            elif years <= 5: exp_tier = '2-5y'
+            elif years <= 10: exp_tier = '5-10y'
+            elif years <= 20: exp_tier = '10-20y'
+            else: exp_tier = '20y+'
+            
+            mentor = models.Mentor(
+                id=user.id,
+                name=mentee.name if mentee and mentee.name else display_name,
+                country=mentee.country if mentee and mentee.country else "United States",
+                ed_level=mentee.ed_level if mentee and mentee.ed_level else "Bachelor's degree",
+                dev_type=mentee.dev_type if mentee and mentee.dev_type else "Developer, back-end",
+                years_code_pro=years,
+                exp_tier=exp_tier,
+                job_factors=mentee.job_factors if mentee and mentee.job_factors else "Remote work options",
+                org_size=mentee.org_size if mentee and mentee.org_size else "Not stated",
+                additional_details=mentee.additional_details if mentee and mentee.additional_details else None,
+                is_active=True,
+                max_mentees=3,
+                profile_pic=avatar or (mentee.profile_pic if mentee else None)
+            )
+            db.add(mentor)
+            db.commit()
+            db.refresh(mentor)
+        return mentor
+        
+    elif target_role == "MENTEE":
+        mentee = db.query(models.Mentee).filter(models.Mentee.id == user.id).first()
+        if not mentee:
+            mentor = db.query(models.Mentor).filter(models.Mentor.id == user.id).first()
+            years = float(mentor.years_code_pro if mentor and mentor.years_code_pro is not None else 1.0)
+            if years <= 2: exp_tier = '0-2y'
+            elif years <= 5: exp_tier = '2-5y'
+            elif years <= 10: exp_tier = '5-10y'
+            elif years <= 20: exp_tier = '10-20y'
+            else: exp_tier = '20y+'
+            
+            mentee = models.Mentee(
+                id=user.id,
+                name=mentor.name if mentor and mentor.name else display_name,
+                country=mentor.country if mentor and mentor.country else "United States",
+                ed_level=mentor.ed_level if mentor and mentor.ed_level else "Bachelor's degree",
+                dev_type=mentor.dev_type if mentor and mentor.dev_type else "Developer, back-end",
+                years_code_pro=years,
+                exp_tier=exp_tier,
+                job_factors=mentor.job_factors if mentor and mentor.job_factors else "Remote work options",
+                org_size=mentor.org_size if mentor and mentor.org_size else "Not stated",
+                additional_details=mentor.additional_details if mentor and mentor.additional_details else None,
+                profile_pic=avatar or (mentor.profile_pic if mentor else None)
+            )
+            db.add(mentee)
+            db.commit()
+            db.refresh(mentee)
+        return mentee
+    return None
+
 @app.post("/api/v1/auth/sso", response_model=schemas.SSOResponse)
 def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)):
-    import secrets
     provider = req.provider.lower().strip()
     if provider not in ["google", "facebook"]:
         raise HTTPException(status_code=400, detail="Unsupported SSO provider. Must be 'google' or 'facebook'.")
@@ -737,7 +807,46 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
         if picture and not user.avatar_url:
             user.avatar_url = picture
         user.is_verified = True
+        
+        # Honor explicit role selection:
+        # 1. In signup mode: user explicitly registered as Mentor or Mentee
+        if req.mode == "signup" and req.role and req.role.upper() in ["MENTEE", "MENTOR"]:
+            user.role = req.role.upper()
+        # 2. In signin mode: if user explicitly selected Mentor to continue/sign in and was not Admin
+        elif req.mode == "signin" and req.role and req.role.upper() == "MENTOR" and user.role != "ADMIN":
+            user.role = "MENTOR"
+            
         db.commit()
+        db.refresh(user)
+        
+        # Ensure the user's sub-profile exists and matches user.role
+        ensure_user_profile(user, user.role, db, name=name, picture=picture)
+        
+        # Handle invite code if provided for a mentor
+        if req.invite_code and user.role == "MENTOR":
+            nomination = db.query(models.ExternalNomination).filter(models.ExternalNomination.invite_code == req.invite_code).first()
+            if nomination:
+                existing_match = db.query(models.Match).filter(
+                    models.Match.mentee_id == nomination.mentee_id,
+                    models.Match.mentor_id == user.id
+                ).first()
+                if not existing_match:
+                    new_match = models.Match(
+                        mentee_id=nomination.mentee_id,
+                        mentor_id=user.id,
+                        role_score=1.0,
+                        experience_score=1.0,
+                        career_stage_score=1.0,
+                        goals_score=1.0,
+                        practical_score=1.0,
+                        total_score=1.0,
+                        match_quality="Strong",
+                        status="ACCEPTED",
+                        created_at=datetime.datetime.utcnow()
+                    )
+                    db.add(new_match)
+                nomination.status = "ACCEPTED"
+                db.commit()
     else:
         # Seamlessly auto-provision new SSO user
         is_new_user = True
@@ -762,41 +871,7 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
         db.commit()
         db.refresh(user)
         
-        years = 1.0 if user.role == "MENTEE" else 5.0
-        exp_tier = '0-2y' if years <= 2 else '2-5y'
-        
-        if user.role == "MENTEE":
-            new_profile = models.Mentee(
-                id=user.id,
-                name=name,
-                country="United States",
-                ed_level="Bachelor's degree",
-                dev_type="Developer, back-end",
-                years_code_pro=years,
-                exp_tier=exp_tier,
-                job_factors="Remote work options",
-                org_size="Not stated",
-                profile_pic=picture
-            )
-            db.add(new_profile)
-        elif user.role == "MENTOR":
-            new_profile = models.Mentor(
-                id=user.id,
-                name=name,
-                country="United States",
-                ed_level="Bachelor's degree",
-                dev_type="Developer, back-end",
-                years_code_pro=years,
-                exp_tier=exp_tier,
-                job_factors="Remote work options",
-                org_size="Not stated",
-                is_active=True,
-                max_mentees=3,
-                profile_pic=picture
-            )
-            db.add(new_profile)
-            
-        db.commit()
+        ensure_user_profile(user, user.role, db, name=name, picture=picture)
         
         # Handle invite code if provided
         if req.invite_code and user.role == "MENTOR":
@@ -980,10 +1055,14 @@ def read_current_user_profile(current_user: models.User = Depends(auth.get_curre
     
     if current_user.role == "MENTEE":
         mentee = db.query(models.Mentee).filter(models.Mentee.id == current_user.id).first()
+        if not mentee:
+            mentee = ensure_user_profile(current_user, "MENTEE", db)
         if mentee:
             mentee_resp = schemas.MenteeProfileResponse.model_validate(mentee)
     elif current_user.role == "MENTOR":
         mentor = db.query(models.Mentor).filter(models.Mentor.id == current_user.id).first()
+        if not mentor:
+            mentor = ensure_user_profile(current_user, "MENTOR", db)
         if mentor:
             mentor_resp = schemas.MentorProfileResponse.model_validate(mentor)
             

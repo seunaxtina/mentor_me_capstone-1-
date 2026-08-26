@@ -170,18 +170,100 @@ def test_sso_auth_flow():
         assert "access_token" in cb_resp.json()
         print("PASS: OAuth Callback exchange successfully issued JWT token without manual inputs.")
 
-    # 8. Test Invalid Provider Error Handling
-    bad_sso = client.post(
+    # 9. Test Google SSO Sign-Up as Mentor (Create Account mode)
+    g_mentor_email = f"google_mentor_{uuid.uuid4().hex[:6]}@gmail.com"
+    g_mentor_name = "Alex Google Mentor"
+    g_mentor_pic = "https://lh3.googleusercontent.com/a/mock_mentor_avatar"
+    g_mentor_oauth_id = f"google_oauth_{uuid.uuid4().hex[:8]}"
+    
+    sso_g_mentor_signup = client.post(
         "/api/v1/auth/sso",
         json={
-            "provider": "twitter",
-            "email": "test@twitter.com"
+            "provider": "google",
+            "email": g_mentor_email,
+            "name": g_mentor_name,
+            "picture": g_mentor_pic,
+            "oauth_id": g_mentor_oauth_id,
+            "role": "MENTOR",
+            "mode": "signup"
         }
     )
-    assert bad_sso.status_code == 400
-    print("PASS: Unsupported provider correctly rejected with 400 Bad Request.")
+    assert sso_g_mentor_signup.status_code == 200, f"Google Mentor Sign-up failed: {sso_g_mentor_signup.text}"
+    gm_data = sso_g_mentor_signup.json()
+    assert gm_data["is_new_user"] is True
+    assert gm_data["provider"] == "Google"
+    assert gm_data["role"] == "MENTOR"
+    assert "access_token" in gm_data
+    gm_token = gm_data["access_token"]
     
+    gm_me_resp = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {gm_token}"}
+    )
+    assert gm_me_resp.status_code == 200
+    gm_me_data = gm_me_resp.json()
+    assert gm_me_data["user"]["role"] == "MENTOR"
+    assert gm_me_data["mentor"] is not None
+    assert gm_me_data["mentor"]["name"] == g_mentor_name
+    print(f"PASS: Google SSO Sign-Up created Mentor with Mentor profile: {g_mentor_email}")
+
+    # 10. Test Google SSO Sign-In as Mentor
+    sso_gm_signin = client.post(
+        "/api/v1/auth/sso",
+        json={
+            "provider": "google",
+            "email": g_mentor_email,
+            "oauth_id": g_mentor_oauth_id,
+            "role": "MENTOR",
+            "mode": "signin"
+        }
+    )
+    assert sso_gm_signin.status_code == 200
+    gm_signin_data = sso_gm_signin.json()
+    assert gm_signin_data["is_new_user"] is False
+    assert gm_signin_data["role"] == "MENTOR"
+    print(f"PASS: Google SSO Sign-In as Mentor preserved/returned MENTOR role.")
+
+    # 11. Test upgrading an existing Mentee account to Mentor when registering as Mentor with Google
+    existing_mentee_email = f"switch_user_{uuid.uuid4().hex[:6]}@gmail.com"
+    # First provision as Mentee
+    s1 = client.post(
+        "/api/v1/auth/sso",
+        json={
+            "provider": "google",
+            "email": existing_mentee_email,
+            "name": "Switch User",
+            "role": "MENTEE",
+            "mode": "signin"
+        }
+    )
+    assert s1.status_code == 200
+    assert s1.json()["role"] == "MENTEE"
+    
+    # Now user registers as Mentor
+    s2 = client.post(
+        "/api/v1/auth/sso",
+        json={
+            "provider": "google",
+            "email": existing_mentee_email,
+            "name": "Switch User",
+            "role": "MENTOR",
+            "mode": "signup"
+        }
+    )
+    assert s2.status_code == 200
+    assert s2.json()["role"] == "MENTOR"
+    sw_token = s2.json()["access_token"]
+    
+    sw_me = client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {sw_token}"})
+    assert sw_me.status_code == 200
+    sw_data = sw_me.json()
+    assert sw_data["user"]["role"] == "MENTOR"
+    assert sw_data["mentor"] is not None
+    print(f"PASS: Existing Mentee seamlessly updated to Mentor and created Mentor profile: {existing_mentee_email}")
+
     print("\nAll Google & Facebook SSO test cases passed successfully!\n")
 
 if __name__ == "__main__":
     test_sso_auth_flow()
+

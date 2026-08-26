@@ -2615,10 +2615,11 @@ else:
                         use_container_width=True
                     )
                     
-                    st.subheader("Accept or Decline Proposals")
+                    st.subheader("🎯 Request Mentorship from Top Matches")
+                    st.caption("Review your algorithm-recommended mentors below and send a mentorship request to initiate a connection.")
                     for m in matches:
                         if m['status'] == 'PROPOSED':
-                            cols = st.columns([3, 1, 1])
+                            cols = st.columns([2.5, 1.2, 0.8])
                             raw_s = m['total_score']
                             pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
                             cols[0].write(f"**{m['mentor_name']}** ({m['mentor_devtype']} | {m['mentor_years']} yrs exp) — **Score: {pct_s}%** ({m['match_quality']})") 
@@ -2648,15 +2649,15 @@ else:
                                         display_pdf_inline(pdf_bytes)
                                     else:
                                         st.info("CV details unavailable.")
-                            if cols[1].button("✅ Accept", key=f"accept_{m['id']}"):
+                            if cols[1].button("📩 Request Mentorship", key=f"req_mentor_{m['id']}", type="primary"):
                                 if api_match_action(m['id'], "ACCEPT"):
-                                    st.success(f"You accepted the match with {m['mentor_name']}!")
+                                    st.success(f"🚀 Mentorship request sent to {m['mentor_name']}! You will be notified when they review and respond.")
                                     if 'current_matches' in st.session_state:
                                         del st.session_state['current_matches']
                                     st.rerun()
-                            if cols[2].button("❌ Decline", key=f"decline_{m['id']}"):
+                            if cols[2].button("🚫 Pass", key=f"decline_{m['id']}"):
                                 if api_match_action(m['id'], "DECLINE"):
-                                    st.warning(f"You declined the match with {m['mentor_name']}.")
+                                    st.info(f"Passed on proposal for {m['mentor_name']}.")
                                     if 'current_matches' in st.session_state:
                                         del st.session_state['current_matches']
                                     st.rerun()
@@ -2689,13 +2690,13 @@ else:
                     # ── 1. Metric bar ─────────────────────────────────────────
                     total_h    = len(history)
                     connected  = sum(1 for h in history if h['status'] == 'ACCEPTED')
-                    pending_h  = sum(1 for h in history if h['status'] == 'PENDING')
-                    declined_h = sum(1 for h in history if h['status'] == 'DECLINED')
+                    pending_h  = sum(1 for h in history if h['status'] in ['REQUESTED', 'PENDING'])
+                    declined_h = sum(1 for h in history if h['status'] in ['DECLINED', 'DECLINE'])
                     hm1, hm2, hm3, hm4 = st.columns(4)
                     hm1.metric("📋 Total Matches", total_h)
                     hm2.metric("✅ Connected", connected)
-                    hm3.metric("⏳ Pending", pending_h)
-                    hm4.metric("❌ Declined", declined_h)
+                    hm3.metric("⏳ Awaiting Mentor", pending_h)
+                    hm4.metric("❌ Declined / Passed", declined_h)
                     st.markdown("---")
 
                     # ── 3. Filter & sort controls ──────────────────────────────
@@ -2703,7 +2704,7 @@ else:
                     with f_col1:
                         status_filter = st.selectbox(
                             "Filter by Status",
-                            ["All", "✅ Connected (ACCEPTED)", "⏳ Pending (PENDING)", "❌ Declined (DECLINED)"],
+                            ["All", "✅ Connected (ACCEPTED)", "⏳ Awaiting Mentor Response (REQUESTED)", "❌ Declined / Passed"],
                             key="hist_status_filter"
                         )
                     with f_col2:
@@ -2717,11 +2718,18 @@ else:
                     status_map = {
                         "All": None,
                         "✅ Connected (ACCEPTED)": "ACCEPTED",
-                        "⏳ Pending (PENDING)": "PENDING",
-                        "❌ Declined (DECLINED)": "DECLINED"
+                        "⏳ Awaiting Mentor Response (REQUESTED)": "REQUESTED",
+                        "❌ Declined / Passed": "DECLINED"
                     }
                     active_filter = status_map[status_filter]
-                    filtered = [h for h in history if active_filter is None or h['status'] == active_filter]
+                    if active_filter == "DECLINED":
+                        filtered = [h for h in history if h['status'] in ['DECLINED', 'DECLINE']]
+                    elif active_filter == "REQUESTED":
+                        filtered = [h for h in history if h['status'] in ['REQUESTED', 'PENDING']]
+                    elif active_filter is not None:
+                        filtered = [h for h in history if h['status'] == active_filter]
+                    else:
+                        filtered = history
 
                     # Apply sort
                     if "Score" in sort_by:
@@ -2757,17 +2765,21 @@ else:
 
                         # Status badge
                         if status == 'ACCEPTED':
-                            status_badge = "✅ Connected"
+                            status_badge = "✅ Connected (Mentor Accepted)"
                             status_color = "#155724"
                             status_bg = "#d4edda"
-                        elif status == 'DECLINED':
-                            status_badge = "❌ Declined"
+                        elif status in ['DECLINED', 'DECLINE']:
+                            status_badge = "❌ Declined / Passed"
                             status_color = "#721c24"
                             status_bg = "#f8d7da"
-                        else:
-                            status_badge = "⏳ Pending"
+                        elif status == 'REQUESTED':
+                            status_badge = "⏳ Request Sent (Awaiting Mentor)"
                             status_color = "#856404"
                             status_bg = "#fff3cd"
+                        else:
+                            status_badge = "💡 Match Proposed"
+                            status_color = "#004085"
+                            status_bg = "#cce5ff"
 
                         date_str = h['created_at'].split("T")[0] if 'T' in h['created_at'] else h['created_at']
 

@@ -46,7 +46,7 @@ class SSOLoginRequest(BaseModel):
     name: Optional[str] = None
     picture: Optional[str] = None
     oauth_id: Optional[str] = None
-    role: Optional[str] = "MENTEE"
+    role: Optional[str] = None
     mode: Optional[str] = "signin"  # "signin" or "signup"
     invite_code: Optional[str] = None
 
@@ -54,7 +54,7 @@ class SSOCallbackRequest(BaseModel):
     provider: str
     code: str
     redirect_uri: Optional[str] = None
-    role: Optional[str] = "MENTEE"
+    role: Optional[str] = None
     mode: Optional[str] = "signin"  # "signin" or "signup"
     invite_code: Optional[str] = None
 

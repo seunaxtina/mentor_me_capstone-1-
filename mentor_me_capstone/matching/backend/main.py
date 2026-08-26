@@ -797,6 +797,26 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
     is_new_user = False
     
     if user:
+        # Enforce strict account and role separation:
+        if req.mode == "signup":
+            requested_role = (req.role or "MENTEE").upper()
+            if requested_role != user.role:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"An account with this email ({user.email}) is already registered as a {user.role.capitalize()}. You cannot register the same email as a {requested_role.capitalize()}. Please sign in to your {user.role.capitalize()} account, or use a different Google account."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"An account with this email ({user.email}) is already registered as a {user.role.capitalize()}. Please sign in on the 'Sign In' tab."
+                )
+        elif req.mode == "signin":
+            if req.role and user.role != "ADMIN" and req.role.upper() != user.role:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"This account ({user.email}) is registered as a {user.role.capitalize()}, not a {req.role.capitalize()}. Please select 'Continue as {user.role.capitalize()} with {provider.capitalize()}' to sign in."
+                )
+        
         # Existing user: update provider info if not set
         if not user.name and name:
             user.name = name
@@ -807,14 +827,6 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
         if picture and not user.avatar_url:
             user.avatar_url = picture
         user.is_verified = True
-        
-        # Honor explicit role selection:
-        # 1. In signup mode: user explicitly registered as Mentor or Mentee
-        if req.mode == "signup" and req.role and req.role.upper() in ["MENTEE", "MENTOR"]:
-            user.role = req.role.upper()
-        # 2. In signin mode: if user explicitly selected Mentor to continue/sign in and was not Admin
-        elif req.mode == "signin" and req.role and req.role.upper() == "MENTOR" and user.role != "ADMIN":
-            user.role = "MENTOR"
             
         db.commit()
         db.refresh(user)

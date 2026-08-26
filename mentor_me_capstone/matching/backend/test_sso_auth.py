@@ -146,13 +146,15 @@ def test_sso_auth_flow():
         mock_token_resp.json.return_value = {"access_token": "mock_google_access_token"}
         mock_post.return_value = mock_token_resp
 
+        cb_email = f"cb_user_{uuid.uuid4().hex[:6]}@gmail.com"
+        cb_oauth_id = f"google_cb_{uuid.uuid4().hex[:8]}"
         mock_userinfo_resp = MagicMock()
         mock_userinfo_resp.status_code = 200
         mock_userinfo_resp.json.return_value = {
-            "email": "cb_user_123@gmail.com",
+            "email": cb_email,
             "name": "Callback User",
             "picture": "https://lh3.googleusercontent.com/mock",
-            "sub": "google_cb_123"
+            "sub": cb_oauth_id
         }
         mock_get.return_value = mock_userinfo_resp
 
@@ -224,43 +226,64 @@ def test_sso_auth_flow():
     assert gm_signin_data["role"] == "MENTOR"
     print(f"PASS: Google SSO Sign-In as Mentor preserved/returned MENTOR role.")
 
-    # 11. Test upgrading an existing Mentee account to Mentor when registering as Mentor with Google
-    existing_mentee_email = f"switch_user_{uuid.uuid4().hex[:6]}@gmail.com"
-    # First provision as Mentee
+    # 11. Test strict role separation: A Mentee cannot re-register as a Mentor using the same Google email
+    existing_mentee_email = f"strict_mentee_{uuid.uuid4().hex[:6]}@gmail.com"
+    # First register as Mentee
     s1 = client.post(
         "/api/v1/auth/sso",
         json={
             "provider": "google",
             "email": existing_mentee_email,
-            "name": "Switch User",
+            "name": "Strict Mentee",
             "role": "MENTEE",
-            "mode": "signin"
+            "mode": "signup"
         }
     )
     assert s1.status_code == 200
     assert s1.json()["role"] == "MENTEE"
     
-    # Now user registers as Mentor
+    # Now user tries to register as Mentor with the same email
     s2 = client.post(
         "/api/v1/auth/sso",
         json={
             "provider": "google",
             "email": existing_mentee_email,
-            "name": "Switch User",
+            "name": "Strict Mentee",
             "role": "MENTOR",
             "mode": "signup"
         }
     )
-    assert s2.status_code == 200
-    assert s2.json()["role"] == "MENTOR"
-    sw_token = s2.json()["access_token"]
-    
-    sw_me = client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {sw_token}"})
-    assert sw_me.status_code == 200
-    sw_data = sw_me.json()
-    assert sw_data["user"]["role"] == "MENTOR"
-    assert sw_data["mentor"] is not None
-    print(f"PASS: Existing Mentee seamlessly updated to Mentor and created Mentor profile: {existing_mentee_email}")
+    assert s2.status_code == 400
+    assert "already registered as a Mentee" in s2.json()["detail"]
+    print(f"PASS: Re-registering Mentee as Mentor strictly blocked: {s2.json()['detail']}")
+
+    # 12. Test strict role separation on sign-in: Mentee attempting to sign in selecting Mentor role
+    s3 = client.post(
+        "/api/v1/auth/sso",
+        json={
+            "provider": "google",
+            "email": existing_mentee_email,
+            "role": "MENTOR",
+            "mode": "signin"
+        }
+    )
+    assert s3.status_code == 400
+    assert "registered as a Mentee, not a Mentor" in s3.json()["detail"]
+    print(f"PASS: Signing in with wrong role mismatch strictly blocked: {s3.json()['detail']}")
+
+    # 13. Signing in with correct Mentee role succeeds
+    s4 = client.post(
+        "/api/v1/auth/sso",
+        json={
+            "provider": "google",
+            "email": existing_mentee_email,
+            "role": "MENTEE",
+            "mode": "signin"
+        }
+    )
+    assert s4.status_code == 200
+    assert s4.json()["role"] == "MENTEE"
+    print("PASS: Signing in with matching Mentee role succeeds.")
 
     print("\nAll Google & Facebook SSO test cases passed successfully!\n")
 

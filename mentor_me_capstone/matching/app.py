@@ -1493,6 +1493,31 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
                 st.markdown("---")
                 render_active_chat_stream(curr_match['id'], partner_name, current_role)
 
+def trigger_client_tab_switch(target_tab_keyword: str):
+    """Programmatically switches the Streamlit client tab using DOM trigger."""
+    import streamlit.components.v1 as components
+    js_code = f"""
+    <script>
+        function doSwitch() {{
+            try {{
+                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                for (let tab of tabs) {{
+                    if (tab.innerText && tab.innerText.toLowerCase().includes("{target_tab_keyword.lower()}")) {{
+                        tab.click();
+                        return true;
+                    }}
+                }}
+            }} catch(e) {{}}
+            return false;
+        }}
+        if (!doSwitch()) {{
+            setTimeout(doSwitch, 100);
+            setTimeout(doSwitch, 350);
+        }}
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+
 def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key_suffix: str = ""):
     st.markdown(f"#### 💬 Direct Conversation with {partner_name}")
     st.caption("Secure, real-time messaging directly within the Mentor Me platform.")
@@ -2537,7 +2562,9 @@ else:
     unread_summary = api_get_unread_messages()
     tot_unread = unread_summary.get('total_unread', 0)
     if tot_unread > 0:
-        st.sidebar.info(f"💬 **{tot_unread} unread message(s)** from your connections!")
+        if st.sidebar.button(f"💬 View {tot_unread} Unread Message(s)", key="sidebar_unread_btn", type="primary", use_container_width=True):
+            st.session_state['trigger_tab_switch'] = "Direct Messages"
+            st.rerun()
     
     if st.sidebar.button("🚪 Log Out"):
         clear_auth_session()
@@ -2629,17 +2656,17 @@ else:
                 st.markdown("**Choose Your Communication Channel:**")
                 coord_col1, coord_col2 = st.columns(2)
                 with coord_col1:
-                    with st.popover("💬 Chat Directly on Platform", use_container_width=True):
-                        st.markdown(f"#### 💬 Direct Chat with **{f_match['mentor_name']}**")
-                        st.caption("Send your personalized introductory note directly to the in-app chat with one click:")
-                        if st.button("🚀 Send Introductory Note to In-App Chat", key=f"quick_send_coord_{f_match_id}", use_container_width=True):
-                            ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
-                            if ok_s:
-                                st.success(f"Introductory note sent to {f_match['mentor_name']} via in-app chat!")
-                                st.rerun()
-                            else:
-                                st.error(res_s)
-                        display_in_app_chat(f_match_id, f_match['mentor_name'], "MENTEE", key_suffix=f"focus_chat_{f_match_id}")
+                    if st.button("🚀 Send Note & Open Messages Hub", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
+                        ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
+                        if ok_s:
+                            api_mark_match_notified(f_match_id)
+                            del st.session_state['focus_scheduling_match']
+                            st.session_state['active_chat_match_id'] = f_match_id
+                            st.session_state['trigger_tab_switch'] = "Direct Messages"
+                            st.session_state['profile'] = None
+                            st.rerun()
+                        else:
+                            st.error(res_s)
                 with coord_col2:
                     if st.button(f"✉️ Send Email to {f_match['mentor_name']}", key=f"focus_send_email_{f_match_id}", use_container_width=True):
                         ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, edited_intro_msg)
@@ -2700,6 +2727,10 @@ else:
         
         msg_tab_label = f"💬 Direct Messages ({tot_unread})" if tot_unread > 0 else "💬 Direct Messages"
         tab_setup, tab_match, tab_messages, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", msg_tab_label, "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
+        
+        if st.session_state.get('trigger_tab_switch'):
+            tgt_tab = st.session_state.pop('trigger_tab_switch')
+            trigger_client_tab_switch(tgt_tab)
         
         with tab_setup:
             st.subheader("Profile Details")
@@ -3224,17 +3255,14 @@ else:
                                     
                                     cal_btn1, cal_btn2, cal_btn3, cal_btn4 = st.columns(4)
                                     with cal_btn1:
-                                        with st.popover("💬 Chat on Platform", use_container_width=True):
-                                            st.markdown(f"#### 💬 Direct Chat with **{h['mentor_name']}**")
-                                            st.caption("Send your personalized introductory note directly into the chat:")
-                                            if st.button("🚀 Send Note to In-App Chat", key=f"quick_send_mhist_{h['id']}", use_container_width=True):
-                                                ok_s, res_s = api_send_message(h['id'], h_edited_intro_msg)
-                                                if ok_s:
-                                                    st.success(f"Meeting note sent to {h['mentor_name']} via in-app chat!")
-                                                    st.rerun()
-                                                else:
-                                                    st.error(res_s)
-                                            display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mhist_cal_chat_{h['id']}")
+                                        if st.button("🚀 Send Note & Open Chat", key=f"quick_send_mhist_{h['id']}", type="primary", use_container_width=True):
+                                            ok_s, res_s = api_send_message(h['id'], h_edited_intro_msg)
+                                            if ok_s:
+                                                st.session_state['active_chat_match_id'] = h['id']
+                                                st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                                st.rerun()
+                                            else:
+                                                st.error(res_s)
                                     with cal_btn2:
                                         if st.button(f"✉️ Send Email", key=f"mhist_send_email_{h['id']}", use_container_width=True):
                                             ok_e, msg_e = api_send_direct_match_email(h['id'], coordinate_subject, h_edited_intro_msg)
@@ -3254,10 +3282,11 @@ else:
                                             key=f"download_ics_mentee_{h['id']}"
                                         )
 
-                                # ── In-App Direct Chat ─────────────────────────────
-                                with st.popover(f"💬 Open In-App Chat", use_container_width=True):
-                                    st.markdown(f"#### 💬 Direct Chat with **{h['mentor_name']}**")
-                                    display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mentee_pop_{h['id']}")
+                                # ── In-App Direct Chat Link ────────────────────────
+                                if st.button(f"💬 Open Chat with {h['mentor_name']} in Messages Hub", key=f"mentee_goto_chat_{h['id']}", use_container_width=True):
+                                    st.session_state['active_chat_match_id'] = h['id']
+                                    st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                    st.rerun()
 
                                 # ── Goal Tracker ──────────────────────────────────
                                 with st.expander(f"📓 Mentorship Journal & Goals — {h['mentor_name']}"):
@@ -4029,6 +4058,10 @@ else:
         msg_tab_label_m = f"💬 Direct Messages ({tot_unread})" if tot_unread > 0 else "💬 Direct Messages"
         tab_setup, tab_requests, tab_messages_m, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", msg_tab_label_m, "📜 Match History", "🤝 Nominate a Colleague"])
         
+        if st.session_state.get('trigger_tab_switch'):
+            tgt_tab_m = st.session_state.pop('trigger_tab_switch')
+            trigger_client_tab_switch(tgt_tab_m)
+        
         with tab_setup:
             st.subheader("Profile Details")
             if st.session_state.get('profile_save_success'):
@@ -4432,17 +4465,14 @@ else:
                             
                             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                             with m_col1:
-                                with st.popover("💬 Chat on Platform", use_container_width=True):
-                                    st.markdown(f"#### 💬 Direct Chat with **{conn['mentee_name']}**")
-                                    st.caption("Coordinate meeting times directly within the platform.")
-                                    if st.button("🚀 Send Availability Note to Chat", key=f"quick_send_avail_{conn['id']}", use_container_width=True):
-                                        ok_s, res_s = api_send_message(conn['id'], avail_msg)
-                                        if ok_s:
-                                            st.success(f"Availability note sent to {conn['mentee_name']} via in-app chat!")
-                                            st.rerun()
-                                        else:
-                                            st.error(res_s)
-                                    display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_cal_chat_{conn['id']}")
+                                if st.button("🚀 Send Note & Open Chat", key=f"quick_send_avail_{conn['id']}", type="primary", use_container_width=True):
+                                    ok_s, res_s = api_send_message(conn['id'], avail_msg)
+                                    if ok_s:
+                                        st.session_state['active_chat_match_id'] = conn['id']
+                                        st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                        st.rerun()
+                                    else:
+                                        st.error(res_s)
                             with m_col2:
                                 if st.button(f"✉️ Send Email", key=f"mentor_send_email_{conn['id']}", use_container_width=True):
                                     ok_e, msg_e = api_send_direct_match_email(conn['id'], avail_subject, avail_msg)
@@ -4462,9 +4492,10 @@ else:
                                     key=f"download_ics_mentor_{conn['id']}"
                                 )
 
-                        with st.popover(f"💬 Open In-App Chat", use_container_width=True):
-                            st.markdown(f"#### 💬 Direct Chat with **{conn['mentee_name']}**")
-                            display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_pop_{conn['id']}")
+                        if st.button(f"💬 Open Chat with {conn['mentee_name']} in Messages Hub", key=f"mentor_open_chat_{conn['id']}", use_container_width=True):
+                            st.session_state['active_chat_match_id'] = conn['id']
+                            st.session_state['trigger_tab_switch'] = "Direct Messages"
+                            st.rerun()
             else:
                 st.info("No active mentorship connections yet. Once you accept incoming requests above, they will appear here.")
 
@@ -4623,6 +4654,12 @@ else:
                                           mh.get('goals_score', 0), mh.get('practical_score', 0)]
                             })
                             st.bar_chart(m_breakdown.set_index('Criterion'))
+
+                        if mh.get('status') == 'ACCEPTED':
+                            if st.button(f"💬 Open Chat with {mh['mentee_name']} in Messages Hub", key=f"mhist_chat_btn_{mh['id']}", use_container_width=True):
+                                st.session_state['active_chat_match_id'] = mh['id']
+                                st.session_state['trigger_tab_switch'] = "Direct Messages"
+                                st.rerun()
 
         with tab_nominate:
             import urllib.parse as _up_nom

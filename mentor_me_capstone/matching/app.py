@@ -1322,12 +1322,77 @@ def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key
                 else:
                     st.error(res_s)
 
-def render_top_messaging_hub(current_role: str, user_profile: dict, matches_history: list):
+@st.fragment(run_every="5s")
+def render_top_notifications_bell(current_role: str):
+    st.write("")
+    st.write("")
+    history = api_get_match_history() or []
+    
+    if current_role == "MENTEE":
+        unnotified = [m for m in history if m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
+        unread_count = len(unnotified)
+        bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+        
+        with st.popover(bell_label, use_container_width=True):
+            head_col1, head_col2 = st.columns([2, 1])
+            with head_col1:
+                st.markdown("### 🔔 Notifications")
+            with head_col2:
+                if st.button("🔄 Sync", key="mentee_notif_sync_btn", use_container_width=True):
+                    st.rerun(scope="fragment")
+                    
+            if unread_count == 0:
+                st.write("No new notifications.")
+            else:
+                for unm in unnotified:
+                    button_label = f"🎉 **{unm['mentor_name']}** accepted your mentorship request! (Click to connect)"
+                    if st.button(button_label, key=f"notif_redirect_btn_{unm['id']}", use_container_width=True):
+                        st.session_state['focus_scheduling_match'] = unm['id']
+                        st.rerun()
+                        
+                    c_space, c_dismiss = st.columns([3, 1])
+                    with c_dismiss:
+                        if st.button("Dismiss", key=f"dismiss_notif_mentee_{unm['id']}", use_container_width=True):
+                            if api_mark_match_notified(unm['id']):
+                                st.session_state['profile'] = None
+                                st.rerun(scope="fragment")
+    else:  # MENTOR
+        unnotified_reqs = [m for m in history if m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
+        unread_count = len(unnotified_reqs)
+        bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
+        
+        with st.popover(bell_label, use_container_width=True):
+            head_col1, head_col2 = st.columns([2, 1])
+            with head_col1:
+                st.markdown("### 🔔 Notifications")
+            with head_col2:
+                if st.button("🔄 Sync", key="mentor_notif_sync_btn", use_container_width=True):
+                    st.rerun(scope="fragment")
+                    
+            if unread_count == 0:
+                st.write("No new notifications.")
+            else:
+                for unm in unnotified_reqs:
+                    st.info(f"📩 **{unm['mentee_name']}** requested mentorship!")
+                    subcol1, subcol2 = st.columns([1, 1])
+                    if subcol1.button("👉 Respond", key=f"focus_notif_mentor_{unm['id']}", use_container_width=True):
+                        st.session_state['focus_request_match'] = unm['id']
+                        st.rerun()
+                    if subcol2.button("Dismiss", key=f"dismiss_notif_mentor_{unm['id']}", use_container_width=True):
+                        if api_mark_match_notified(unm['id']):
+                            st.session_state['profile'] = None
+                            st.rerun(scope="fragment")
+
+@st.fragment(run_every="5s")
+def render_top_messaging_hub(current_role: str, user_profile: dict, matches_history: list = None):
     st.write("")
     st.write("")
     unread_summary = api_get_unread_messages()
     tot_unread = unread_summary.get('total_unread', 0)
     chat_label = f"💬 ({tot_unread})" if tot_unread > 0 else "💬 Messages"
+    
+    if matches_history is None:
+        matches_history = api_get_match_history() or []
     
     with st.popover(chat_label, use_container_width=True):
         st.markdown("### 💬 Direct Messages & Inquiries")
@@ -2387,27 +2452,7 @@ else:
         with col_chat:
             render_top_messaging_hub("MENTEE", profile, history)
         with col_bell:
-            st.write("")
-            st.write("")
-            bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
-            with st.popover(bell_label, use_container_width=True):
-                st.markdown("### 🔔 Notifications")
-                if unread_count == 0:
-                    st.write("No new notifications.")
-                else:
-                    for unm in unnotified:
-                        button_label = f"🎉 {unm['mentor_name']} accepted your connection request! (Click to view slots & connect)"
-                        if st.button(button_label, key=f"notif_redirect_btn_{unm['id']}", use_container_width=True):
-                            st.session_state['focus_scheduling_match'] = unm['id']
-                            st.rerun()
-                            
-                        # Compact dismiss option right below
-                        c_space, c_dismiss = st.columns([3, 1])
-                        with c_dismiss:
-                            if st.button("Dismiss", key=f"dismiss_notif_mentee_{unm['id']}", use_container_width=True):
-                                if api_mark_match_notified(unm['id']):
-                                    st.session_state['profile'] = None
-                                    st.rerun()
+            render_top_notifications_bell("MENTEE")
         
         tab_setup, tab_match, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
         
@@ -3700,24 +3745,7 @@ else:
         with col_chat:
             render_top_messaging_hub("MENTOR", profile, history)
         with col_bell:
-            st.write("")
-            st.write("")
-            bell_label = f"🔔 ({unread_count})" if unread_count > 0 else "🔔"
-            with st.popover(bell_label, use_container_width=True):
-                st.markdown("### 🔔 Notifications")
-                if unread_count == 0:
-                    st.write("No new notifications.")
-                else:
-                    for unm in unnotified_reqs:
-                        st.info(f"📩 **{unm['mentee_name']}** requested connection!")
-                        subcol1, subcol2 = st.columns([1, 1])
-                        if subcol1.button("👉 Respond", key=f"focus_notif_mentor_{unm['id']}"):
-                            st.session_state['focus_request_match'] = unm['id']
-                            st.rerun()
-                        if subcol2.button("Dismiss", key=f"dismiss_notif_mentor_{unm['id']}"):
-                            if api_mark_match_notified(unm['id']):
-                                st.session_state['profile'] = None
-                                st.rerun()
+            render_top_notifications_bell("MENTOR")
         
         tab_setup, tab_requests, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "🤝 Nominate a Colleague"])
         

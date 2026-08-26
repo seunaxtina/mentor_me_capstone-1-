@@ -3906,35 +3906,21 @@ else:
         with tab_requests:
             import urllib.parse as _up_req
 
-            st.subheader("Mentorship Requests & Active Connections")
-            st.caption("Review incoming mentee requests and manage your active mentoring connections.")
+            st.subheader("Incoming Requests & Active Mentoring")
+            st.caption("Review incoming mentee requests requiring your response, and coordinate with your active mentees.")
 
             history = sorted(api_get_match_history() or [], key=lambda h: h.get('created_at', ''), reverse=True)
 
-            if not history:
-                st.info("No mentees have matched or requested a connection with you yet. Make sure your profile is set to **Active** in the Profile Setup tab.")
-            else:
-                # ── Metric bar ────────────────────────────────────────────────
-                total_r    = len(history)
-                active_r   = sum(1 for h in history if h['status'] == 'ACCEPTED')
-                pending_r  = sum(1 for h in history if h['status'] == 'REQUESTED')
-                declined_r = sum(1 for h in history if h['status'] == 'DECLINED')
-                rm1, rm2, rm3, rm4 = st.columns(4)
-                rm1.metric("📋 Total", total_r)
-                rm2.metric("✅ Active Connections", active_r)
-                rm3.metric("🔔 Awaiting Response", pending_r)
-                rm4.metric("❌ Declined", declined_r)
-                st.markdown("---")
+            proposed = [h for h in history if h['status'] == 'REQUESTED']
+            active_conns = [h for h in history if h['status'] == 'ACCEPTED']
 
-                # ════════════════════════════════════════════════════════════
-                # SECTION A — Incoming Requests (REQUESTED status)
-                # ════════════════════════════════════════════════════════════
-                proposed = [h for h in history if h['status'] == 'REQUESTED']
-                if proposed:
-                    st.markdown(f"### 🔔 Incoming Requests ({len(proposed)} awaiting your response)")
-                    st.caption("Review each mentee's profile before deciding. You can accept and share your availability in one step.")
-
-                    for p in proposed:
+            # ════════════════════════════════════════════════════════════
+            # SECTION A — Incoming Requests (REQUESTED status)
+            # ════════════════════════════════════════════════════════════
+            st.markdown(f"### 🔔 Incoming Requests ({len(proposed)} awaiting your response)")
+            if proposed:
+                st.caption("Review each mentee's profile before deciding. You can accept and share your availability in one step.")
+                for p in proposed:
                         raw_s = p.get('total_score', 0)
                         pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
                         if pct_s >= 80:
@@ -4075,130 +4061,133 @@ else:
                                         st.rerun()
                                     else:
                                         st.error("Failed to decline connection.")
-                                if dec2.button("↩ Cancel", key=f"cancel_decline_{p['id']}", use_container_width=True):
-                                    st.session_state[f"show_decline_dialog_{p['id']}"] = False
-                                    st.rerun()
+                                 if dec2.button("↩ Cancel", key=f"cancel_decline_{p['id']}", use_container_width=True):
+                                     st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                                     st.rerun()
+            else:
+                st.info("✨ **You're all caught up!** No pending mentee requests awaiting response.")
 
-                # ════════════════════════════════════════════════════════════
-                # SECTION B — Active Connections
-                # ════════════════════════════════════════════════════════════
-                active_conns = [h for h in history if h['status'] == 'ACCEPTED']
-                if active_conns:
-                    st.markdown("---")
-                    st.markdown(f"### ✅ Active Connections ({len(active_conns)})")
-                    st.caption("Your current mentees. Reach out to welcome them and coordinate your first session.")
+            # ════════════════════════════════════════════════════════════
+            # SECTION B — Active Connections
+            # ════════════════════════════════════════════════════════════
+            st.markdown("---")
+            st.markdown(f"### 👥 Active Mentoring Partnerships ({len(active_conns)})")
+            if active_conns:
+                st.caption("Your current active mentees. Reach out to welcome them, coordinate intro syncs, or chat directly in-app.")
 
-                    for conn in active_conns:
-                        raw_sc = conn.get('total_score', 0)
-                        pct_sc = int(round(raw_sc * 100)) if isinstance(raw_sc, float) and raw_sc <= 1.0 else int(round(raw_sc))
-                        date_c = conn['created_at'].split("T")[0] if 'T' in conn['created_at'] else conn['created_at']
+                for conn in active_conns:
+                    raw_sc = conn.get('total_score', 0)
+                    pct_sc = int(round(raw_sc * 100)) if isinstance(raw_sc, float) and raw_sc <= 1.0 else int(round(raw_sc))
+                    date_c = conn['created_at'].split("T")[0] if 'T' in conn['created_at'] else conn['created_at']
 
-                        with st.container(border=True):
-                            cl, cr = st.columns([3, 1])
-                            with cl:
-                                st.markdown(f"##### {conn['mentee_name']}")
-                                roles_c = (conn.get('mentee_devtype') or '').replace(';', ' · ')
-                                st.caption(f"📍 {conn.get('mentee_country', '')}  ·  {roles_c}  ·  {conn.get('mentee_years', '?')} yrs exp")
+                    with st.container(border=True):
+                        cl, cr = st.columns([3, 1])
+                        with cl:
+                            st.markdown(f"##### {conn['mentee_name']}")
+                            roles_c = (conn.get('mentee_devtype') or '').replace(';', ' · ')
+                            st.caption(f"📍 {conn.get('mentee_country', '')}  ·  {roles_c}  ·  {conn.get('mentee_years', '?')} yrs exp")
+                            st.markdown(
+                                f"<span style='background:#d4edda; color:#155724; padding:3px 10px; "
+                                f"border-radius:12px; font-size:0.8rem; font-weight:600;'>✅ Connected</span>"
+                                f"  <span style='color:#6c757d; font-size:0.8rem;'>· Since {date_c}</span>",
+                                unsafe_allow_html=True
+                            )
+                            contact_parts = []
+                            if conn.get('mentee_email'):
+                                contact_parts.append(f"📧 `{conn['mentee_email']}`")
+                            if conn.get('mentee_linkedin_link'):
+                                contact_parts.append(f"[🌐 LinkedIn]({conn['mentee_linkedin_link']})")
+                            if contact_parts:
+                                st.markdown("  ·  ".join(contact_parts))
+                            if conn.get('is_ally_boosted'):
+                                st.success("🤝 **Diversity Ally Match**: Matched because you are a registered D&I Ally and the mentee requested one.")
+                        with cr:
+                            st.markdown(
+                                f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
+                                f"<span style='font-size:1rem; font-weight:700; color:#1e7e34;'>{pct_sc}%</span><br/>"
+                                f"<span style='font-size:0.7rem; color:#6c757d;'>Match Score</span></div>",
+                                unsafe_allow_html=True
+                            )
+
+                        with st.expander(f"👤 View {conn['mentee_name']}'s Profile"):
+                            display_profile_card(
+                                name=conn['mentee_name'],
+                                country=conn.get('mentee_country'),
+                                ed_level=conn.get('mentee_ed_level'),
+                                roles=conn.get('mentee_devtype'),
+                                years=conn.get('mentee_years'),
+                                org_size=conn.get('mentee_org_size'),
+                                priorities=conn.get('mentee_job_factors'),
+                                additional_details=conn.get('mentee_additional_details'),
+                                user_id=conn.get('mentee_id'),
+                                email=conn.get('mentee_email'),
+                                alternative_emails=conn.get('mentee_alternative_emails'),
+                                linkedin_link=conn.get('mentee_linkedin_link')
+                            )
+
+                        if conn.get('mentee_cv_path'):
+                            with st.expander(f"📄 Read {conn['mentee_name']}'s CV"):
+                                pdf_bytes = api_get_cv(conn['mentee_id'])
+                                if pdf_bytes:
+                                    display_pdf_inline(pdf_bytes)
+
+                        with st.expander(f"📅 Coordinate Intro Call with {conn['mentee_name']}"):
+                            st.caption("Edit and send an email sharing your availability for the first 25-minute sync.")
+                            avail_template = (
+                                f"Hi {conn['mentee_name']},\n\n"
+                                f"Welcome! I am looking forward to our mentorship partnership.\n\n"
+                                f"Here are a few times I am available for our introductory 25-minute sync:\n"
+                                f"- [Insert Day/Time 1]\n"
+                                f"- [Insert Day/Time 2]\n"
+                                f"- [Insert Day/Time 3]\n\n"
+                            )
+                            if mentor.get('contact_link'):
+                                avail_template += f"Alternatively, you can book directly on my calendar:\n{mentor['contact_link']}\n\n"
+                            avail_template += "Please let me know which slot works best and send a calendar invite once confirmed!\n\nBest regards,\n" + mentor.get('name', '')
+                            avail_msg = st.text_area("Edit your availability email:", value=avail_template, height=200, key=f"avail_msg_{conn['id']}")
+                            avail_subject = "Scheduling: Mentor Me Intro Sync"
+                            avail_mailto = f"mailto:{conn['mentee_email']}?subject={_up_req.quote(avail_subject)}&body={_up_req.quote(avail_msg)}"
+                            
+                            m_title_val = f"Mentor Me Intro Sync: {mentor.get('name', 'Mentor')} & {conn['mentee_name']}"
+                            m_gcal_url = generate_google_calendar_url(
+                                title=m_title_val,
+                                description=avail_msg,
+                                location="Virtual (Mentor Me Platform)",
+                                start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                            )
+                            m_ics_bytes = generate_ics_calendar_file(
+                                title=m_title_val,
+                                description=avail_msg,
+                                location="Virtual (Mentor Me Platform)",
+                                start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                                end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                            )
+                            
+                            m_col1, m_col2, m_col3 = st.columns(3)
+                            with m_col1:
                                 st.markdown(
-                                    f"<span style='background:#d4edda; color:#155724; padding:3px 10px; "
-                                    f"border-radius:12px; font-size:0.8rem; font-weight:600;'>✅ Connected</span>"
-                                    f"  <span style='color:#6c757d; font-size:0.8rem;'>· Since {date_c}</span>",
+                                    f'<a href="{avail_mailto}" target="_blank" style="text-decoration:none;">'
+                                    f'<button style="background:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
+                                    f'✉️ Email Mentee</button></a>',
                                     unsafe_allow_html=True
                                 )
-                                contact_parts = []
-                                if conn.get('mentee_email'):
-                                    contact_parts.append(f"📧 `{conn['mentee_email']}`")
-                                if conn.get('mentee_linkedin_link'):
-                                    contact_parts.append(f"[🌐 LinkedIn]({conn['mentee_linkedin_link']})")
-                                if contact_parts:
-                                    st.markdown("  ·  ".join(contact_parts))
-                                if conn.get('is_ally_boosted'):
-                                    st.success("🤝 **Diversity Ally Match**: Matched because you are a registered D&I Ally and the mentee requested one.")
-                            with cr:
-                                st.markdown(
-                                    f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px;'>"
-                                    f"<span style='font-size:1rem; font-weight:700; color:#1e7e34;'>{pct_sc}%</span><br/>"
-                                    f"<span style='font-size:0.7rem; color:#6c757d;'>Match Score</span></div>",
-                                    unsafe_allow_html=True
+                            with m_col2:
+                                st.link_button("📅 Add to Google Calendar", m_gcal_url, use_container_width=True)
+                            with m_col3:
+                                st.download_button(
+                                    "📥 Download .ICS Invite",
+                                    data=m_ics_bytes,
+                                    file_name=f"mentor_me_{conn['mentee_name'].replace(' ', '_')}.ics",
+                                    mime="text/calendar",
+                                    use_container_width=True,
+                                    key=f"download_ics_mentor_{conn['id']}"
                                 )
 
-                            with st.expander(f"👤 View {conn['mentee_name']}'s Profile"):
-                                display_profile_card(
-                                    name=conn['mentee_name'],
-                                    country=conn.get('mentee_country'),
-                                    ed_level=conn.get('mentee_ed_level'),
-                                    roles=conn.get('mentee_devtype'),
-                                    years=conn.get('mentee_years'),
-                                    org_size=conn.get('mentee_org_size'),
-                                    priorities=conn.get('mentee_job_factors'),
-                                    additional_details=conn.get('mentee_additional_details'),
-                                    user_id=conn.get('mentee_id'),
-                                    email=conn.get('mentee_email'),
-                                    alternative_emails=conn.get('mentee_alternative_emails'),
-                                    linkedin_link=conn.get('mentee_linkedin_link')
-                                )
-
-                            if conn.get('mentee_cv_path'):
-                                with st.expander(f"📄 Read {conn['mentee_name']}'s CV"):
-                                    pdf_bytes = api_get_cv(conn['mentee_id'])
-                                    if pdf_bytes:
-                                        display_pdf_inline(pdf_bytes)
-
-                            with st.expander(f"📅 Coordinate Intro Call with {conn['mentee_name']}"):
-                                st.caption("Edit and send an email sharing your availability for the first 25-minute sync.")
-                                avail_template = (
-                                    f"Hi {conn['mentee_name']},\n\n"
-                                    f"Welcome! I am looking forward to our mentorship partnership.\n\n"
-                                    f"Here are a few times I am available for our introductory 25-minute sync:\n"
-                                    f"- [Insert Day/Time 1]\n"
-                                    f"- [Insert Day/Time 2]\n"
-                                    f"- [Insert Day/Time 3]\n\n"
-                                )
-                                if mentor.get('contact_link'):
-                                    avail_template += f"Alternatively, you can book directly on my calendar:\n{mentor['contact_link']}\n\n"
-                                avail_template += "Please let me know which slot works best and send a calendar invite once confirmed!\n\nBest regards,\n" + mentor.get('name', '')
-                                avail_msg = st.text_area("Edit your availability email:", value=avail_template, height=200, key=f"avail_msg_{conn['id']}")
-                                avail_subject = "Scheduling: Mentor Me Intro Sync"
-                                avail_mailto = f"mailto:{conn['mentee_email']}?subject={_up_req.quote(avail_subject)}&body={_up_req.quote(avail_msg)}"
-                                
-                                m_title_val = f"Mentor Me Intro Sync: {mentor.get('name', 'Mentor')} & {conn['mentee_name']}"
-                                m_gcal_url = generate_google_calendar_url(
-                                    title=m_title_val,
-                                    description=avail_msg,
-                                    location="Virtual (Mentor Me Platform)",
-                                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
-                                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
-                                )
-                                m_ics_bytes = generate_ics_calendar_file(
-                                    title=m_title_val,
-                                    description=avail_msg,
-                                    location="Virtual (Mentor Me Platform)",
-                                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
-                                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
-                                )
-                                
-                                m_col1, m_col2, m_col3 = st.columns(3)
-                                with m_col1:
-                                    st.markdown(
-                                        f'<a href="{avail_mailto}" target="_blank" style="text-decoration:none;">'
-                                        f'<button style="background:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
-                                        f'✉️ Email Mentee</button></a>',
-                                        unsafe_allow_html=True
-                                    )
-                                with m_col2:
-                                    st.link_button("📅 Add to Google Calendar", m_gcal_url, use_container_width=True)
-                                with m_col3:
-                                    st.download_button(
-                                        "📥 Download .ICS Invite",
-                                        data=m_ics_bytes,
-                                        file_name=f"mentor_me_{conn['mentee_name'].replace(' ', '_')}.ics",
-                                        mime="text/calendar",
-                                        use_container_width=True,
-                                        key=f"download_ics_mentor_{conn['id']}"
-                                    )
-
-                            with st.expander(f"💬 In-App Direct Chat with {conn['mentee_name']}", expanded=True):
-                                display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_req_{conn['id']}")
+                        with st.expander(f"💬 In-App Direct Chat with {conn['mentee_name']}", expanded=True):
+                            display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_req_{conn['id']}")
+            else:
+                st.info("No active mentorship connections yet. Once you accept incoming requests above, they will appear here.")
 
         with tab_history_m:
             import urllib.parse as _up_mhist

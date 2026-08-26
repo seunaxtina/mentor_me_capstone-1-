@@ -1331,6 +1331,168 @@ def generate_ics_calendar_file(title: str, description: str, location: str = "Vi
     )
     return ics_content.encode("utf-8")
 
+@st.fragment(run_every="4s")
+def render_active_chat_stream(match_id: str, partner_name: str, current_role: str):
+    messages = api_get_messages(match_id)
+    chat_box = st.container(height=380, border=False)
+    with chat_box:
+        if not messages:
+            st.info(f"👋 No messages yet in this conversation. Send a message to **{partner_name}** below!")
+        else:
+            for msg in messages:
+                is_mine = msg.get('is_mine', False)
+                ts_str = msg.get('created_at', '')
+                time_label = ""
+                if ts_str:
+                    try:
+                        t_part = ts_str.split('T')[1][:5] if 'T' in ts_str else ts_str[-8:-3]
+                        d_part = ts_str.split('T')[0] if 'T' in ts_str else ""
+                        time_label = f"{d_part} {t_part}"
+                    except Exception:
+                        time_label = ""
+                        
+                if is_mine:
+                    with st.chat_message("user", avatar="🌱" if current_role == "MENTEE" else "🧭"):
+                        st.markdown(f"**You** <span style='font-size:0.75rem; color:#94a3b8; margin-left:8px;'>{time_label}</span>", unsafe_allow_html=True)
+                        st.write(msg.get('content', ''))
+                else:
+                    with st.chat_message("assistant", avatar="🧭" if current_role == "MENTEE" else "🌱"):
+                        import html as _html
+                        sender_label = _html.escape(msg.get('sender_name') or partner_name or "Partner")
+                        st.markdown(f"**{sender_label}** <span style='font-size:0.75rem; color:#94a3b8; margin-left:8px;'>{time_label}</span>", unsafe_allow_html=True)
+                        st.write(msg.get('content', ''))
+
+    with st.form(f"page_chat_composer_{match_id}", clear_on_submit=True):
+        c_inp, c_snd = st.columns([5, 1.2])
+        with c_inp:
+            inp_text = st.text_input("Type your message...", placeholder="Type a message...", key=f"page_inp_{match_id}", label_visibility="collapsed")
+        with c_snd:
+            btn_sub = st.form_submit_button("Send 📤", use_container_width=True)
+            if btn_sub and inp_text.strip():
+                ok_s, res_s = api_send_message(match_id, inp_text.strip())
+                if ok_s:
+                    st.rerun(scope="fragment")
+                else:
+                    st.error(res_s)
+
+def render_messages_page(current_role: str, profile_data: dict, history: list = None):
+    st.subheader("💬 Direct Messages & Inquiries")
+    st.caption("Communicate securely with your mentors and mentees in real time.")
+
+    if history is None:
+        history = api_get_match_history() or []
+
+    unread_summary = api_get_unread_messages()
+    connected_matches = [m for m in (history or []) if m.get('status') == 'ACCEPTED']
+    inquiry_matches = [m for m in (history or []) if m.get('status') in ['PROPOSED', 'REQUESTED', 'PENDING']]
+
+    active_search_matches = st.session_state.get('current_matches', [])
+    for sm in active_search_matches:
+        if not any(pm.get('id') == sm.get('id') for pm in inquiry_matches) and not any(cm.get('id') == sm.get('id') for cm in connected_matches):
+            inquiry_matches.append(sm)
+
+    all_threads = connected_matches + inquiry_matches
+
+    if not all_threads:
+        st.info("No active mentorship connections or candidate inquiries found yet. Connect with a mentor/mentee to start chatting!")
+        return
+
+    col_threads, col_chat_window = st.columns([1.2, 2.8], gap="medium")
+
+    with col_threads:
+        st.markdown("##### 📋 Conversations")
+        
+        active_match_id = st.session_state.get('active_chat_match_id')
+        if not active_match_id or not any(t['id'] == active_match_id for t in all_threads):
+            active_match_id = all_threads[0]['id']
+            st.session_state['active_chat_match_id'] = active_match_id
+
+        if connected_matches:
+            st.markdown("**👥 Active Partnerships**")
+            for m in connected_matches:
+                p_name = m.get('mentor_name') if current_role == 'MENTEE' else m.get('mentee_name', 'Partner')
+                p_role = (m.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
+                p_country = m.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
+                
+                m_unread = unread_summary.get('by_match', {}).get(m['id'], 0)
+                unread_badge = f" 🔴 ({m_unread})" if m_unread > 0 else ""
+                
+                is_selected = (m['id'] == active_match_id)
+                btn_type = "primary" if is_selected else "secondary"
+                
+                avatar_icon = "🧭" if current_role == "MENTEE" else "🌱"
+                btn_label = f"{avatar_icon} {p_name}{unread_badge}\n\n📍 {p_country} · {p_role[:22]}" if p_role else f"{avatar_icon} {p_name}{unread_badge}\n\n📍 {p_country}"
+                
+                if st.button(btn_label, key=f"thread_btn_{m['id']}_{current_role}", type=btn_type, use_container_width=True):
+                    st.session_state['active_chat_match_id'] = m['id']
+                    st.rerun()
+
+        if inquiry_matches:
+            st.markdown("---")
+            st.markdown("**✉️ Inquiries & Requests**")
+            for im in inquiry_matches:
+                t_name = im.get('mentor_name') if current_role == 'MENTEE' else im.get('mentee_name', 'Candidate')
+                t_role = (im.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
+                t_country = im.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
+                
+                im_unread = unread_summary.get('by_match', {}).get(im['id'], 0)
+                unread_badge = f" 🔴 ({im_unread})" if im_unread > 0 else ""
+                
+                is_selected = (im['id'] == active_match_id)
+                btn_type = "primary" if is_selected else "secondary"
+                
+                btn_label = f"💡 {t_name}{unread_badge}\n\n📍 {t_country} · {t_role[:22]}" if t_role else f"💡 {t_name}{unread_badge}\n\n📍 {t_country}"
+                
+                if st.button(btn_label, key=f"thread_btn_{im['id']}_{current_role}", type=btn_type, use_container_width=True):
+                    st.session_state['active_chat_match_id'] = im['id']
+                    st.rerun()
+
+    with col_chat_window:
+        curr_match = next((t for t in all_threads if t['id'] == active_match_id), None)
+        if not curr_match:
+            st.info("Select a conversation from the left to view messages.")
+        else:
+            partner_name = curr_match.get('mentor_name') if current_role == 'MENTEE' else curr_match.get('mentee_name', 'Partner')
+            partner_roles = (curr_match.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').replace(';', ' · ')
+            partner_country = curr_match.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
+            partner_id = curr_match.get('mentor_id' if current_role == 'MENTEE' else 'mentee_id')
+            partner_cv = curr_match.get('mentor_cv_path' if current_role == 'MENTEE' else 'mentee_cv_path')
+            
+            with st.container(border=True):
+                h_col1, h_col2, h_col3 = st.columns([3, 1, 1])
+                with h_col1:
+                    st.markdown(f"#### 💬 {partner_name}")
+                    st.caption(f"📍 {partner_country} · {partner_roles}")
+                with h_col2:
+                    with st.popover("👤 Profile", use_container_width=True):
+                        display_profile_card(
+                            name=partner_name,
+                            country=curr_match.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country'),
+                            ed_level=curr_match.get('mentor_ed_level' if current_role == 'MENTEE' else 'mentee_ed_level'),
+                            roles=curr_match.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype'),
+                            years=curr_match.get('mentor_years' if current_role == 'MENTEE' else 'mentee_years'),
+                            org_size=curr_match.get('mentor_org_size' if current_role == 'MENTEE' else 'mentee_org_size'),
+                            priorities=curr_match.get('mentor_job_factors' if current_role == 'MENTEE' else 'mentee_job_factors'),
+                            additional_details=curr_match.get('mentor_additional_details' if current_role == 'MENTEE' else 'mentee_additional_details'),
+                            user_id=partner_id,
+                            email=curr_match.get('mentor_email' if current_role == 'MENTEE' else 'mentee_email'),
+                            contact_link=curr_match.get('mentor_contact_link' if current_role == 'MENTEE' else None),
+                            linkedin_link=curr_match.get('mentor_linkedin_link' if current_role == 'MENTEE' else 'mentee_linkedin_link')
+                        )
+                with h_col3:
+                    if partner_cv:
+                        with st.popover("📄 CV", use_container_width=True):
+                            pdf_bytes = api_get_cv(partner_id)
+                            if pdf_bytes:
+                                display_pdf_inline(pdf_bytes)
+                            else:
+                                st.info("CV preview unavailable.")
+                    else:
+                        st.write("")
+
+                st.markdown("---")
+                render_active_chat_stream(curr_match['id'], partner_name, current_role)
+
 def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key_suffix: str = ""):
     st.markdown(f"#### 💬 Direct Conversation with {partner_name}")
     st.caption("Secure, real-time messaging directly within the Mentor Me platform.")
@@ -2538,7 +2700,7 @@ else:
         with col_bell:
             render_top_notifications_bell("MENTEE")
         
-        tab_setup, tab_match, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
+        tab_setup, tab_match, tab_messages, tab_outreach, tab_nominations, tab_history, tab_witech, tab_advisor = st.tabs(["⚙️ Profile Setup", "🎯 Platform Matches", "💬 Direct Messages", "🌐 Outreach Hub", "📩 External Invitations", "📜 Match History", "🌟 Women in Tech", "💡 AI Career Advisor"])
         
         with tab_setup:
             st.subheader("Profile Details")
@@ -2821,6 +2983,9 @@ else:
                                       top['goals_score'], top['practical_score']]
                         })
                         st.bar_chart(breakdown.set_index('Criterion'))
+            
+            with tab_messages:
+                render_messages_page("MENTEE", profile, history)
             
             with tab_history:
                 import urllib.parse as _up_hist
@@ -3864,7 +4029,7 @@ else:
         with col_bell:
             render_top_notifications_bell("MENTOR")
         
-        tab_setup, tab_requests, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "📜 Match History", "🤝 Nominate a Colleague"])
+        tab_setup, tab_requests, tab_messages_m, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", "💬 Direct Messages", "📜 Match History", "🤝 Nominate a Colleague"])
         
         with tab_setup:
             st.subheader("Profile Details")
@@ -4304,6 +4469,9 @@ else:
                             display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_pop_{conn['id']}")
             else:
                 st.info("No active mentorship connections yet. Once you accept incoming requests above, they will appear here.")
+
+        with tab_messages_m:
+            render_messages_page("MENTOR", profile, history)
 
         with tab_history_m:
             import urllib.parse as _up_mhist

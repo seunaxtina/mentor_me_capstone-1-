@@ -2399,8 +2399,28 @@ else:
                     f"I will send over a calendar invite.\n\n"
                     f"Best regards,\n{mentee['name']}"
                 )
-                mailto_coord_url = f"mailto:{f_match['mentor_email']}?subject={urllib.parse.quote(coordinate_subject)}&body={urllib.parse.quote(coordinate_body)}"
-                st.markdown(f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#4A90E2; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%; margin-bottom:10px;">✉️ Email Mentor to Coordinate Times</button></a>', unsafe_allow_html=True)
+                st.markdown("**Choose Your Communication Channel:**")
+                coord_col1, coord_col2 = st.columns(2)
+                with coord_col1:
+                    with st.popover("💬 Chat Directly on Platform", use_container_width=True):
+                        st.markdown(f"#### 💬 Direct Chat with **{f_match['mentor_name']}**")
+                        st.caption("You can type custom messages below or send the introductory note with one click.")
+                        if st.button("🚀 Send Proposed Intro Note to In-App Chat", key=f"quick_send_coord_{f_match_id}", use_container_width=True):
+                            ok_s, res_s = api_send_message(f_match_id, coordinate_body)
+                            if ok_s:
+                                st.success(f"Introductory note sent to {f_match['mentor_name']} via in-app chat!")
+                                st.rerun()
+                            else:
+                                st.error(res_s)
+                        display_in_app_chat(f_match_id, f_match['mentor_name'], "MENTEE", key_suffix=f"focus_chat_{f_match_id}")
+                with coord_col2:
+                    mailto_coord_url = f"mailto:{f_match['mentor_email']}?subject={urllib.parse.quote(coordinate_subject)}&body={urllib.parse.quote(coordinate_body)}"
+                    st.markdown(
+                        f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;">'
+                        f'<button style="background-color:#4A90E2; color:white; border:none; padding:9px 16px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.9rem;">'
+                        f'✉️ Email Mentor</button></a>',
+                        unsafe_allow_html=True
+                    )
                 
                 if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
                     api_mark_match_notified(f_match_id)
@@ -2967,19 +2987,31 @@ else:
                                         end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                                     )
                                     
-                                    cal_btn1, cal_btn2, cal_btn3 = st.columns(3)
+                                    cal_btn1, cal_btn2, cal_btn3, cal_btn4 = st.columns(4)
                                     with cal_btn1:
+                                        with st.popover("💬 Chat on Platform", use_container_width=True):
+                                            st.markdown(f"#### 💬 Direct Chat with **{h['mentor_name']}**")
+                                            st.caption("Coordinate meeting times directly within the platform.")
+                                            if st.button("🚀 Send Proposed Times to Chat", key=f"quick_send_mhist_{h['id']}", use_container_width=True):
+                                                ok_s, res_s = api_send_message(h['id'], coordinate_body)
+                                                if ok_s:
+                                                    st.success(f"Meeting note sent to {h['mentor_name']} via in-app chat!")
+                                                    st.rerun()
+                                                else:
+                                                    st.error(res_s)
+                                            display_in_app_chat(h['id'], h['mentor_name'], "MENTEE", key_suffix=f"mhist_cal_chat_{h['id']}")
+                                    with cal_btn2:
                                         st.markdown(
                                             f'<a href="{mailto_coord_url}" target="_blank" style="text-decoration:none;">'
                                             f'<button style="background-color:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
                                             f'✉️ Email Mentor</button></a>',
                                             unsafe_allow_html=True
                                         )
-                                    with cal_btn2:
-                                        st.link_button("📅 Add to Google Calendar", gcal_url, use_container_width=True)
                                     with cal_btn3:
+                                        st.link_button("📅 Google Calendar", gcal_url, use_container_width=True)
+                                    with cal_btn4:
                                         st.download_button(
-                                            "📥 Download .ICS Invite",
+                                            "📥 .ICS Invite",
                                             data=ics_bytes,
                                             file_name=f"mentor_me_sync_{h['mentor_name'].replace(' ', '_')}.ics",
                                             mime="text/calendar",
@@ -4165,19 +4197,31 @@ else:
                                 end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                             )
                             
-                            m_col1, m_col2, m_col3 = st.columns(3)
+                            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                             with m_col1:
+                                with st.popover("💬 Chat on Platform", use_container_width=True):
+                                    st.markdown(f"#### 💬 Direct Chat with **{conn['mentee_name']}**")
+                                    st.caption("Coordinate meeting times directly within the platform.")
+                                    if st.button("🚀 Send Availability Note to Chat", key=f"quick_send_avail_{conn['id']}", use_container_width=True):
+                                        ok_s, res_s = api_send_message(conn['id'], avail_msg)
+                                        if ok_s:
+                                            st.success(f"Availability note sent to {conn['mentee_name']} via in-app chat!")
+                                            st.rerun()
+                                        else:
+                                            st.error(res_s)
+                                    display_in_app_chat(conn['id'], conn['mentee_name'], "MENTOR", key_suffix=f"mentor_cal_chat_{conn['id']}")
+                            with m_col2:
                                 st.markdown(
                                     f'<a href="{avail_mailto}" target="_blank" style="text-decoration:none;">'
                                     f'<button style="background:#4A90E2; color:white; border:none; padding:9px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size:0.85rem;">'
                                     f'✉️ Email Mentee</button></a>',
                                     unsafe_allow_html=True
                                 )
-                            with m_col2:
-                                st.link_button("📅 Add to Google Calendar", m_gcal_url, use_container_width=True)
                             with m_col3:
+                                st.link_button("📅 Google Calendar", m_gcal_url, use_container_width=True)
+                            with m_col4:
                                 st.download_button(
-                                    "📥 Download .ICS Invite",
+                                    "📥 .ICS Invite",
                                     data=m_ics_bytes,
                                     file_name=f"mentor_me_{conn['mentee_name'].replace(' ', '_')}.ics",
                                     mime="text/calendar",

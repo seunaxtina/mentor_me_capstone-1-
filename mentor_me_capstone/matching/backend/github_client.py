@@ -88,19 +88,26 @@ def search_github_mentors(keyword: str, country: str, mentee: models.Mentee):
         
     query = keyword.replace(",", " ").replace(";", " ")
     query = " ".join(query.split())
-    if country:
+    if country and country.strip().lower() != "any":
         query += f' location:"{country}"'
         
+    # Strictly filter for individual human developer accounts (exclude organizations/enterprises)
+    query += ' type:user'
+        
     search_url = "https://api.github.com/search/users"
-    params = {"q": query, "per_page": 5}
+    params = {"q": query, "per_page": 8}
     
     candidates = []
     
     try:
-        res = requests.get(search_url, params=params, headers=headers, verify=False, timeout=3)
+        res = requests.get(search_url, params=params, headers=headers, verify=False, timeout=5)
         if res.status_code == 200:
             items = res.json().get("items", [])
-            for item in items[:4]:
+            for item in items:
+                # Explicitly verify account is an individual human, not an Organization or Bot
+                if item.get("type") and item.get("type") != "User":
+                    continue
+                    
                 username = item.get("login")
                 if not username:
                     continue

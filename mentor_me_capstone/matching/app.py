@@ -1418,7 +1418,7 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
         st.info("No active mentorship connections or candidate inquiries found yet. Connect with a mentor/mentee to start chatting!")
         return
 
-    col_threads, col_chat_window = st.columns([1.2, 2.8], gap="medium")
+    col_threads, col_chat_window = st.columns([1.1, 2.9], gap="medium")
 
     with col_threads:
         st.markdown("##### 📋 Conversations")
@@ -1428,45 +1428,49 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
             active_match_id = all_threads[0]['id']
             st.session_state['active_chat_match_id'] = active_match_id
 
-        if connected_matches:
-            st.markdown("**👥 Active Partnerships**")
-            for m in connected_matches:
-                p_name = m.get('mentor_name') if current_role == 'MENTEE' else m.get('mentee_name', 'Partner')
-                p_role = (m.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
-                p_country = m.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
-                
-                m_unread = unread_summary.get('by_match', {}).get(m['id'], 0)
-                unread_badge = f" 🔴 ({m_unread})" if m_unread > 0 else ""
-                
-                is_selected = (m['id'] == active_match_id)
-                btn_type = "primary" if is_selected else "secondary"
-                
-                avatar_icon = "🧭" if current_role == "MENTEE" else "🌱"
-                btn_label = f"{avatar_icon} {p_name}{unread_badge}\n\n📍 {p_country} · {p_role[:22]}" if p_role else f"{avatar_icon} {p_name}{unread_badge}\n\n📍 {p_country}"
-                
-                if st.button(btn_label, key=f"thread_btn_{m['id']}_{current_role}", type=btn_type, use_container_width=True):
-                    st.session_state['active_chat_match_id'] = m['id']
-                    st.rerun()
+        # Scrollable conversations panel to prevent list from overflowing page
+        threads_box = st.container(height=500, border=True)
+        with threads_box:
+            if connected_matches:
+                st.caption("👥 **ACTIVE PARTNERSHIPS**")
+                for m in connected_matches:
+                    p_name = m.get('mentor_name') if current_role == 'MENTEE' else m.get('mentee_name', 'Partner')
+                    p_role = (m.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
+                    p_country = m.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
+                    
+                    m_unread = unread_summary.get('by_match', {}).get(m['id'], 0)
+                    unread_badge = f" 🔴 ({m_unread})" if m_unread > 0 else ""
+                    
+                    is_selected = (m['id'] == active_match_id)
+                    btn_type = "primary" if is_selected else "secondary"
+                    
+                    avatar_icon = "🧭" if current_role == "MENTEE" else "🌱"
+                    btn_label = f"{avatar_icon} {p_name}{unread_badge}\n📍 {p_country} · {p_role[:16]}" if p_role else f"{avatar_icon} {p_name}{unread_badge}\n📍 {p_country}"
+                    
+                    if st.button(btn_label, key=f"thread_btn_{m['id']}_{current_role}", type=btn_type, use_container_width=True):
+                        st.session_state['active_chat_match_id'] = m['id']
+                        st.rerun()
 
-        if inquiry_matches:
-            st.markdown("---")
-            st.markdown("**✉️ Inquiries & Requests**")
-            for im in inquiry_matches:
-                t_name = im.get('mentor_name') if current_role == 'MENTEE' else im.get('mentee_name', 'Candidate')
-                t_role = (im.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
-                t_country = im.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
-                
-                im_unread = unread_summary.get('by_match', {}).get(im['id'], 0)
-                unread_badge = f" 🔴 ({im_unread})" if im_unread > 0 else ""
-                
-                is_selected = (im['id'] == active_match_id)
-                btn_type = "primary" if is_selected else "secondary"
-                
-                btn_label = f"💡 {t_name}{unread_badge}\n\n📍 {t_country} · {t_role[:22]}" if t_role else f"💡 {t_name}{unread_badge}\n\n📍 {t_country}"
-                
-                if st.button(btn_label, key=f"thread_btn_{im['id']}_{current_role}", type=btn_type, use_container_width=True):
-                    st.session_state['active_chat_match_id'] = im['id']
-                    st.rerun()
+            if inquiry_matches:
+                if connected_matches:
+                    st.markdown("---")
+                st.caption("✉️ **INQUIRIES & REQUESTS**")
+                for im in inquiry_matches:
+                    t_name = im.get('mentor_name') if current_role == 'MENTEE' else im.get('mentee_name', 'Candidate')
+                    t_role = (im.get('mentor_devtype' if current_role == 'MENTEE' else 'mentee_devtype') or '').split(';')[0]
+                    t_country = im.get('mentor_country' if current_role == 'MENTEE' else 'mentee_country', '')
+                    
+                    im_unread = unread_summary.get('by_match', {}).get(im['id'], 0)
+                    unread_badge = f" 🔴 ({im_unread})" if im_unread > 0 else ""
+                    
+                    is_selected = (im['id'] == active_match_id)
+                    btn_type = "primary" if is_selected else "secondary"
+                    
+                    btn_label = f"💡 {t_name}{unread_badge}\n📍 {t_country} · {t_role[:16]}" if t_role else f"💡 {t_name}{unread_badge}\n📍 {t_country}"
+                    
+                    if st.button(btn_label, key=f"thread_btn_{im['id']}_{current_role}", type=btn_type, use_container_width=True):
+                        st.session_state['active_chat_match_id'] = im['id']
+                        st.rerun()
 
     with col_chat_window:
         curr_match = next((t for t in all_threads if t['id'] == active_match_id), None)

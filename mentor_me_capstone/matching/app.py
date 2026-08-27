@@ -3568,17 +3568,15 @@ else:
 
                 st.info("💡 **How Matching Works**: The search filters fetch relevant candidates from the selected directory. The **Compatibility Match %** is then calculated by comparing their profile records directly against your desired **Target Mentor Preferences** (preferred skills/expertise, country, and minimum experience years) to ensure personalized compatibility.")
 
-                # Pull saved preferences as defaults
-                saved_query   = mentee.get('target_mentor_expertise') or ""
-                saved_country = mentee.get('target_mentor_country') or ""
-                saved_years   = mentee.get('target_mentor_min_years') or 0.0
-
-                if not saved_query.strip():
-                    st.warning("⚠️ **No preferences set**: Please specify your **Preferred Mentor Expertise Keywords** in the **Profile Setup** tab first. You can also enter a temporary query below.")
+                # Pull saved preferences with smart fallback to mentee's primary role
+                profile_role_fallback = (mentee.get('dev_type') or '').split(';')[0].strip() if mentee.get('dev_type') else 'Software Engineering'
+                saved_query   = (mentee.get('target_mentor_expertise') or profile_role_fallback or "").strip()
+                saved_country = (mentee.get('target_mentor_country') or mentee.get('country') or "Any").strip()
+                saved_years   = mentee.get('target_mentor_min_years') or 2.0
 
                 # ── Improvement 1: Session-only search query override ────────
-                with st.expander("⚙️ Customize This Search (optional — does not change your saved profile)", expanded=not saved_query.strip()):
-                    st.caption("Pre-filled from your saved Profile Setup preferences. Adjust freely — changes here only affect this search session.")
+                with st.expander("⚙️ Customize This Search (optional — pre-filled from your profile)", expanded=False):
+                    st.caption("Pre-filled automatically from your saved profile preferences. Adjust freely — changes here only affect this search session.")
                     ov_col1, ov_col2, ov_col3 = st.columns([3, 2, 1])
                     with ov_col1:
                         session_query = st.text_input(
@@ -3589,15 +3587,15 @@ else:
                         )
                     with ov_col2:
                         session_country_opts = ["Any"] + COUNTRIES
-                        session_country_default = saved_country if saved_country and saved_country != "Any" else "Any"
+                        session_country_default = saved_country if saved_country and saved_country in session_country_opts else "Any"
                         session_country_idx = session_country_opts.index(session_country_default) if session_country_default in session_country_opts else 0
                         session_country = st.selectbox("Preferred Country", session_country_opts, index=session_country_idx, key="outreach_session_country")
                     with ov_col3:
                         session_min_years = st.number_input("Min. Yrs Exp.", min_value=0.0, max_value=50.0, value=float(saved_years), step=0.5, format="%g", key="outreach_session_years")
 
-                # Resolve active search params (session override wins)
-                active_query   = st.session_state.get("outreach_session_query", saved_query).strip()
-                active_country_raw = st.session_state.get("outreach_session_country", session_country_default if saved_query.strip() else "Any")
+                # Resolve active search params (session override wins, fallback to profile role)
+                active_query   = st.session_state.get("outreach_session_query", saved_query).strip() or profile_role_fallback
+                active_country_raw = st.session_state.get("outreach_session_country", session_country_default)
                 active_country = active_country_raw if active_country_raw != "Any" else None
                 country_lbl    = active_country if active_country else "Any Country"
                 
@@ -3693,16 +3691,17 @@ else:
                             st.markdown("**2. Full InMail / Direct Message Template**")
                             st.text_area("Comprehensive Message (For LinkedIn InMail, In-Platform Messages, or Email):", value=templates["inmail_message"], height=200, key="dl_inmail_area")
 
-                elif active_query:
-                    st.info(f"🎯 **Search Settings**: Searching **{source_short}** for **'{active_query}'** · Location: **{country_lbl}** · Min. experience: **{int(session_min_years)}+ years**")
+                else:
+                    search_q = active_query or profile_role_fallback or "Software Engineering"
+                    st.info(f"🎯 **Search Settings**: Searching **{source_short}** for **'{search_q}'** · Location: **{country_lbl}** · Min. experience: **{int(session_min_years)}+ years**")
                     run_search = st.button(f"🔍 Search Live {source_short} Directory", key="outreach_search_btn", use_container_width=True)
 
                     if run_search:
                         with st.spinner(f"Querying live {source_short} directory and scoring candidates..."):
                             if "GitHub" in search_source:
-                                results = api_search_github(active_query, active_country)
+                                results = api_search_github(search_q, active_country)
                             else:
-                                results = api_search_orcid(active_query, active_country)
+                                results = api_search_orcid(search_q, active_country)
                             if results:
                                 st.session_state['outreach_search_results'] = sorted(results, key=lambda r: r.get('match_percentage', 0), reverse=True)
                                 st.session_state['outreach_search_results_source'] = source_short

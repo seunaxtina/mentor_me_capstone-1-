@@ -881,7 +881,22 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
                 nomination.status = "ACCEPTED"
                 db.commit()
     else:
-        # Seamlessly auto-provision new SSO user
+        # Prevent unregistered users from signing in without prior sign-up
+        if req.mode == "signin":
+            log_security_event(
+                db=db,
+                event_type="LOGIN_FAILED",
+                user_email=email,
+                status="FAILED",
+                ip_address="SSO-OAuth",
+                details=f"Unregistered {provider.capitalize()} account attempted sign-in without prior sign-up."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No account found for this Google email ({email}). You must create an account first on the 'Create Account / Sign Up' tab before you can sign in."
+            )
+
+        # Allow seamless new user creation only during explicit 'signup' mode
         is_new_user = True
         user_role = (req.role or "MENTEE").upper()
         if user_role not in ["MENTEE", "MENTOR"]:
@@ -905,6 +920,15 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
         db.refresh(user)
         
         ensure_user_profile(user, user.role, db, name=name, picture=picture)
+        
+        log_security_event(
+            db=db,
+            event_type="LOGIN_SUCCESS",
+            user_email=email,
+            status="SUCCESS",
+            ip_address="SSO-OAuth",
+            details=f"New user registered and authenticated via {provider.capitalize()} SSO as {user.role}."
+        )
         
         # Handle invite code if provided
         if req.invite_code and user.role == "MENTOR":

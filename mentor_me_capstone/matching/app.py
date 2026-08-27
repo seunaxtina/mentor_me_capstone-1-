@@ -1239,6 +1239,37 @@ def api_admin_delete_user(user_id: str):
     except Exception as e:
         return False, f"API Connection Error: {str(e)}"
 
+def api_admin_get_audit_logs(limit: int = 100):
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.get(f"{API_URL}/admin/audit-logs?limit={limit}", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_admin_get_algorithm_config():
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.get(f"{API_URL}/admin/algorithm-config", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return {}
+    except Exception:
+        return {}
+
+def api_admin_update_algorithm_config(config_dict: dict):
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.put(f"{API_URL}/admin/algorithm-config", json=config_dict, headers=headers)
+        if response.status_code == 200:
+            return True, response.json().get("message", "Weights updated successfully.")
+        detail = response.json().get("detail", "Failed to update algorithm weights.")
+        return False, detail
+    except Exception as e:
+        return False, f"API Connection Error: {str(e)}"
+
 def api_forgot_password(email: str):
     try:
         response = api_http.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
@@ -4895,7 +4926,7 @@ else:
                 st.bar_chart(country_df.set_index('Country'))
 
         # ════════════════════════════════════════════════════════════════════
-        # SECTION B — Global Match Log
+        # SECTION B — Global Match Log & Outcomes
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("📋 Global Platform Matches Log")
@@ -4911,22 +4942,178 @@ else:
                     'Mentee': h['mentee_name'],
                     'Mentor': h['mentor_name'],
                     'Score': f"{pct_s}%",
+                    'Raw Score': raw_s,
                     'Confidence': h['match_quality'],
                     'Status': h['status'],
                     'Rep. Boost': '🌟' if h.get('is_representation_boosted') else '',
                     'Ally Boost': '🤝' if h.get('is_ally_boosted') else '',
                     'Date': h['created_at'].split('T')[0] if 'T' in h.get('created_at','') else h.get('created_at','')
                 })
-            st.dataframe(pd.DataFrame(admin_list), use_container_width=True)
+            df_admin_matches = pd.DataFrame(admin_list)
+            st.dataframe(df_admin_matches[['Match ID', 'Mentee', 'Mentor', 'Score', 'Confidence', 'Status', 'Rep. Boost', 'Ally Boost', 'Date']], use_container_width=True)
 
         # ════════════════════════════════════════════════════════════════════
-        # SECTION C — Registered User & Credential Management
+        # SECTION C — Dynamic Algorithm Weight Tuning (Live Hyperparameters)
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("⚙️ Dynamic Algorithm Weight Tuning (Live Hyperparameters)")
+        st.caption("Adjust the empirical weights and institutional boosts used by the 5-Factor Weighted Matching Model in real time without restarting services.")
+
+        current_cfg = api_admin_get_algorithm_config()
+        def_role = current_cfg.get("w_role", 0.30)
+        def_exp  = current_cfg.get("w_exp", 0.25)
+        def_stage = current_cfg.get("w_stage", 0.20)
+        def_goals = current_cfg.get("w_goals", 0.15)
+        def_pract = current_cfg.get("w_practical", 0.10)
+        def_ally  = current_cfg.get("ally_boost", 0.10)
+        def_rep   = current_cfg.get("rep_boost", 0.05)
+
+        with st.form("admin_algorithm_weights_form"):
+            w_c1, w_c2 = st.columns(2)
+            with w_c1:
+                sl_role = st.slider("1. Role & Technical Alignment Weight (Jaccard)", min_value=0.0, max_value=0.60, value=float(def_role), step=0.05, help="Weight given to overlapping DevType roles and technical skills.")
+                sl_exp = st.slider("2. Relatable Experience Gap Weight (2-10y window)", min_value=0.0, max_value=0.50, value=float(def_exp), step=0.05, help="Weight given to optimal seniority distance.")
+                sl_stage = st.slider("3. Career-Stage Priority Weight (Retention Risk 0-2y, 5-10y)", min_value=0.0, max_value=0.50, value=float(def_stage), step=0.05, help="Direct boost given to retention-risk career milestones.")
+            with w_c2:
+                sl_goals = st.slider("4. Goals & Workplace Culture Alignment", min_value=0.0, max_value=0.40, value=float(def_goals), step=0.05, help="Alignment on stated JobFactors priorities.")
+                sl_pract = st.slider("5. Practical Logistics / Org Size Fit", min_value=0.0, max_value=0.30, value=float(def_pract), step=0.05, help="Weight given to company scale and logistics compatibility.")
+                sl_ally = st.slider("🤝 D&I Ally Priority Boost", min_value=0.0, max_value=0.20, value=float(def_ally), step=0.01, help="Additive score boost applied when mentor is a registered Diversity Ally.")
+                sl_rep = st.slider("🌟 Gender Representation Boost", min_value=0.0, max_value=0.15, value=float(def_rep), step=0.01, help="Additive boost for underrepresented female-female pairs.")
+
+            raw_sum = sl_role + sl_exp + sl_stage + sl_goals + sl_pract
+            st.markdown(f"**Core 5-Factor Weight Sum:** `{raw_sum:.2f}` {'✅ (Balanced to 1.00)' if abs(raw_sum - 1.0) < 0.001 else f'⚠️ (Normalizes to 1.00 on save)'}")
+
+            btn_save_weights = st.form_submit_button("💾 Save & Activate Algorithm Weights", type="primary", use_container_width=True)
+            if btn_save_weights:
+                norm_factor = raw_sum if raw_sum > 0 else 1.0
+                new_weights = {
+                    "w_role": round(sl_role / norm_factor, 3),
+                    "w_exp": round(sl_exp / norm_factor, 3),
+                    "w_stage": round(sl_stage / norm_factor, 3),
+                    "w_goals": round(sl_goals / norm_factor, 3),
+                    "w_practical": round(sl_pract / norm_factor, 3),
+                    "ally_boost": round(sl_ally, 3),
+                    "rep_boost": round(sl_rep, 3),
+                }
+                ok_w, msg_w = api_admin_update_algorithm_config(new_weights)
+                if ok_w:
+                    st.success(f"🎉 {msg_w}")
+                    st.rerun()
+                else:
+                    st.error(msg_w)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION D — Institutional Data Export Hub (One-Click CSV / Audit)
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("📊 Institutional Data Export Hub")
+        st.caption("Export anonymized data packages, SDG 5 equity progress summaries, and audit transaction records for institutional stakeholders, academic evaluators, or grant reporting.")
+
+        all_users = api_admin_get_users()
+
+        exp_col1, exp_col2, exp_col3 = st.columns(3)
+        with exp_col1:
+            if history:
+                csv_matches = pd.DataFrame(history).to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Match Outcomes (CSV)",
+                    data=csv_matches,
+                    file_name=f"mentoring_me_matches_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.button("📥 Export Match Outcomes (CSV)", disabled=True, use_container_width=True)
+
+        with exp_col2:
+            sdg_summary_data = {
+                "metric": [
+                    "Total Matches Generated",
+                    "Accepted Mentorships",
+                    "Female Mentees Count",
+                    "Female Mentors Count",
+                    "Female-Female Pairing Rate",
+                    "D&I Ally Boost Adoption Rate",
+                    "Gender Representation Boost Rate",
+                    "Average Accepted Match Compatibility Score",
+                    "Export Timestamp"
+                ],
+                "value": [
+                    total_matches,
+                    len(accepted),
+                    len(set(h['mentee_name'] for h in female_mentee)),
+                    len(set(h['mentor_name'] for h in female_mentor)),
+                    ff_rate,
+                    ally_rate,
+                    rep_rate,
+                    avg_score,
+                    datetime.datetime.utcnow().isoformat()
+                ]
+            }
+            csv_sdg = pd.DataFrame(sdg_summary_data).to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export SDG 5 Impact Report (CSV)",
+                data=csv_sdg,
+                file_name=f"mentoring_me_sdg5_report_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        with exp_col3:
+            if all_users:
+                csv_users = pd.DataFrame(all_users).to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export User Directory (CSV)",
+                    data=csv_users,
+                    file_name=f"mentoring_me_users_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.button("📥 Export User Directory (CSV)", disabled=True, use_container_width=True)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION E — Security Telemetry & Real-Time Audit Logs
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("🛡️ Security Telemetry & Real-Time Audit Logs")
+        st.caption("Live security monitoring, 2FA delivery verification, session authentication tracking, and administrative event auditing.")
+
+        audit_logs = api_admin_get_audit_logs(limit=50)
+        if not audit_logs:
+            st.info("No security audit logs recorded yet. Events will appear here as users log in, verify 2FA, or perform account actions.")
+        else:
+            total_events = len(audit_logs)
+            logins_ok = sum(1 for l in audit_logs if l.get('event_type') == 'LOGIN_SUCCESS')
+            twofa_ok  = sum(1 for l in audit_logs if l.get('event_type') == '2FA_VERIFIED')
+            failures  = sum(1 for l in audit_logs if l.get('status') == 'FAILED')
+
+            sec_c1, sec_c2, sec_c3, sec_c4 = st.columns(4)
+            sec_c1.metric("🛡️ Total Audit Events", total_events)
+            sec_c2.metric("✅ 2FA Successes", twofa_ok)
+            sec_c3.metric("🔑 Direct Logins", logins_ok)
+            sec_c4.metric("⚠️ Security Alerts/Fails", failures)
+
+            log_table_data = []
+            for l in audit_logs:
+                st_icon = "🟢" if l.get('status') == 'SUCCESS' else ("🔴" if l.get('status') == 'FAILED' else "🟡")
+                log_table_data.append({
+                    "Status": f"{st_icon} {l.get('status', 'SUCCESS')}",
+                    "Event": l.get('event_type', 'EVENT'),
+                    "User": l.get('user_email', 'Anonymous'),
+                    "Details": l.get('details', ''),
+                    "IP Address": l.get('ip_address', 'Internal'),
+                    "Timestamp": l.get('created_at', '').replace('T', ' ')[:19]
+                })
+            st.dataframe(pd.DataFrame(log_table_data), use_container_width=True)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION F — Registered User & Credential Management
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("👥 Registered User & Credential Management")
         st.caption("Inspect real registered accounts, monitor authentication status, and permanently revoke credentials or delete accounts (GDPR Compliance).")
 
-        all_users = api_admin_get_users()
         if not all_users:
             st.info("No registered users retrieved.")
         else:
@@ -5001,7 +5188,7 @@ else:
                                         st.error(msg_d)
 
         # ════════════════════════════════════════════════════════════════════
-        # SECTION D — System Tools (Danger Zone)
+        # SECTION G — System Tools (Danger Zone)
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("⚙️ System Reset & Database Tools")

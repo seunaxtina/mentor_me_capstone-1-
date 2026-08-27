@@ -348,3 +348,26 @@ class DirectEmailResponse(BaseModel):
     message: str
     recipient_email: str
 
+
+# ── Admin Dynamic Algorithm & Telemetry Schemas ─────────────────────────
+class AlgorithmConfigRequest(BaseModel):
+    w_role: float = 0.30
+    w_exp: float = 0.25
+    w_stage: float = 0.20
+    w_goals: float = 0.15
+    w_practical: float = 0.10
+    ally_boost: float = 0.10
+    rep_boost: float = 0.05
+
+class SecurityAuditLogResponse(BaseModel):
+    id: str
+    event_type: str
+    user_email: Optional[str] = None
+    status: str
+    ip_address: Optional[str] = None
+    details: Optional[str] = None
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+

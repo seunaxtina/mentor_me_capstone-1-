@@ -151,7 +151,8 @@ WEIGHTS = {
     'practical': 0.10,
 }
 
-def compute_match_score(mentee, mentor):
+def compute_match_score(mentee, mentor, weights=None):
+    w = weights if weights is not None else WEIGHTS
     scores = {
         'role': role_alignment_score(mentee['DevType'], mentor['DevType']),
         'experience': experience_gap_score(mentee['YearsCodePro'], mentor['YearsCodePro']),
@@ -159,14 +160,14 @@ def compute_match_score(mentee, mentor):
         'goals': goals_alignment_score(mentee['JobFactors'], mentor['JobFactors']),
         'practical': practical_fit_score(mentee['OrgSize'], mentor['OrgSize']),
     }
-    total = sum(scores[k] * WEIGHTS[k] for k in WEIGHTS)
+    total = sum(scores[k] * w.get(k, WEIGHTS.get(k, 0)) for k in scores)
     return round(total, 3), scores
 
 
 # ===========================================================
 # STEP 4: Run on real sampled profiles — find top mentor matches
 # ===========================================================
-def find_top_matches(mentee, mentor_pool, top_n=5):
+def find_top_matches(mentee, mentor_pool, top_n=5, weights=None):
     """
     Returns the top N mentors by total_score.
 
@@ -181,7 +182,7 @@ def find_top_matches(mentee, mentor_pool, top_n=5):
     for _, mentor in mentor_pool.iterrows():
         if mentor['Respondent'] == mentee['Respondent']:
             continue
-        score, breakdown = compute_match_score(mentee, mentor)
+        score, breakdown = compute_match_score(mentee, mentor, weights=weights)
         exp_gap = mentor['YearsCodePro'] - mentee['YearsCodePro']
         results.append({
             'mentor_id': mentor['Respondent'],

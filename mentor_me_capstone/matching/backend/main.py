@@ -135,10 +135,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def read_root():
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/docs")
+def log_security_event(db: Session, event_type: str, user_email: str = None, user_id: str = None, status: str = "SUCCESS", details: str = None, ip_address: str = None):
+    try:
+        audit = models.SecurityAuditLog(
+            event_type=event_type,
+            user_email=user_email,
+            user_id=user_id,
+            status=status,
+            details=details,
+            ip_address=ip_address
+        )
+        db.add(audit)
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 @app.post("/api/v1/auth/signup", response_model=schemas.TokenOrTwoFactorResponse,status_code=status.HTTP_201_CREATED)
@@ -331,6 +341,7 @@ def login(
                 user.is_active = True
                 db.commit()
         elif user and not auth.verify_password(form_data.password, user.password_hash):
+            log_security_event(db, "LOGIN_FAILED", user_email=form_data.username, status="FAILED", details="Incorrect password attempt.")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -338,6 +349,7 @@ def login(
             )
     else:
         if not user or not auth.verify_password(form_data.password, user.password_hash):
+            log_security_event(db, "LOGIN_FAILED", user_email=form_data.username, status="FAILED", details="Incorrect email or password.")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -384,6 +396,8 @@ def login(
         )
         email_thread.start()
 
+        log_security_event(db, "2FA_OTP_SENT", user_email=user.email, user_id=user.id, status="SUCCESS", details="2FA security OTP dispatched via email.")
+
         return schemas.TokenOrTwoFactorResponse(
             two_factor_required=True,
             challenge_token=challenge_token,
@@ -396,6 +410,7 @@ def login(
     access_token = auth.create_access_token(
         data={"sub": user.id, "role": user.role}
     )
+    log_security_event(db, "LOGIN_SUCCESS", user_email=user.email, user_id=user.id, status="SUCCESS", details="Direct session login without 2FA.")
     return schemas.TokenOrTwoFactorResponse(
         two_factor_required=False,
         access_token=access_token,
@@ -425,6 +440,7 @@ def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends
         user.otp_expiry = None
         user.otp_failed_attempts = 0
         db.commit()
+        log_security_event(db, "2FA_FAILED", user_email=user.email, user_id=user.id, status="FAILED", details="Max 2FA attempts reached. Code invalidated.")
         raise HTTPException(
             status_code=429,
             detail="Too many failed attempts. This code has expired. Please request a new code or log in again."
@@ -441,6 +457,7 @@ def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends
         user.otp_failed_attempts = (user.otp_failed_attempts or 0) + 1
         db.commit()
         remaining = 5 - user.otp_failed_attempts
+        log_security_event(db, "2FA_FAILED", user_email=user.email, user_id=user.id, status="FAILED", details=f"Incorrect 2FA code. Remaining attempts: {remaining}")
         if remaining <= 0:
             user.otp_code = None
             user.otp_expiry = None
@@ -460,6 +477,8 @@ def verify_two_factor(req: schemas.TwoFactorVerifyRequest, db: Session = Depends
     user.otp_failed_attempts = 0
     user.is_verified = True
     db.commit()
+
+    log_security_event(db, "2FA_VERIFIED", user_email=user.email, user_id=user.id, status="SUCCESS", details="2FA code verified. Session token granted.")
 
     access_token = auth.create_access_token(
         data={"sub": user.id, "email": user.email, "role": user.role, "user_id": user.id, "name": user.name}
@@ -2266,8 +2285,97 @@ def delete_user_account(
     # 6. Delete user credential record
     db.delete(target_user)
     db.commit()
+
+    log_security_event(
+        db,
+        event_type="USER_DELETED",
+        user_email=target_email,
+        user_id=user_id,
+        status="WARNING",
+        details=f"User account {target_email} was permanently deleted by admin {current_user.email}."
+    )
     
     return {"message": f"User account {target_email} and all associated credentials/data have been permanently deleted."}
+
+
+@app.get("/api/v1/admin/audit-logs")
+def get_security_audit_logs(
+    limit: int = 100,
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    logs = db.query(models.SecurityAuditLog).order_by(models.SecurityAuditLog.created_at.desc()).limit(limit).all()
+    results = []
+    for l in logs:
+        results.append({
+            "id": l.id,
+            "event_type": l.event_type,
+            "user_email": l.user_email or "System/Anonymous",
+            "status": l.status or "SUCCESS",
+            "ip_address": l.ip_address or "Internal",
+            "details": l.details or "",
+            "created_at": l.created_at.isoformat() if l.created_at else ""
+        })
+    return results
+
+
+@app.get("/api/v1/admin/algorithm-config")
+def get_algorithm_configuration(
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    import json
+    cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "algorithm_weights").first()
+    if cfg:
+        try:
+            return json.loads(cfg.value)
+        except Exception:
+            pass
+    return {
+        "w_role": 0.30,
+        "w_exp": 0.25,
+        "w_stage": 0.20,
+        "w_goals": 0.15,
+        "w_practical": 0.10,
+        "ally_boost": 0.10,
+        "rep_boost": 0.05
+    }
+
+
+@app.put("/api/v1/admin/algorithm-config")
+def update_algorithm_configuration(
+    req: schemas.AlgorithmConfigRequest,
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    import json
+    weights_dict = {
+        "w_role": round(req.w_role, 3),
+        "w_exp": round(req.w_exp, 3),
+        "w_stage": round(req.w_stage, 3),
+        "w_goals": round(req.w_goals, 3),
+        "w_practical": round(req.w_practical, 3),
+        "ally_boost": round(req.ally_boost, 3),
+        "rep_boost": round(req.rep_boost, 3),
+    }
+    cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == "algorithm_weights").first()
+    if not cfg:
+        cfg = models.SystemConfig(key="algorithm_weights", value=json.dumps(weights_dict))
+        db.add(cfg)
+    else:
+        cfg.value = json.dumps(weights_dict)
+    db.commit()
+
+    log_security_event(
+        db,
+        event_type="CONFIG_UPDATE",
+        user_email=current_user.email,
+        user_id=current_user.id,
+        status="SUCCESS",
+        details=f"Algorithm weights updated: Role={weights_dict['w_role']}, Exp={weights_dict['w_exp']}, Stage={weights_dict['w_stage']}, Goals={weights_dict['w_goals']}, Practical={weights_dict['w_practical']}."
+    )
+    return {"message": "Algorithm hyperparameters successfully updated and active.", "weights": weights_dict}
+
 
 
 @app.post("/api/v1/matches/{match_id}/send-email", response_model=schemas.DirectEmailResponse)

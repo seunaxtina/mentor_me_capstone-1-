@@ -150,3 +150,25 @@ class Message(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+
+class SecurityAuditLog(Base):
+    __tablename__ = "security_audit_logs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_type = Column(String, nullable=False)  # 'LOGIN_SUCCESS', 'LOGIN_FAILED', '2FA_OTP_SENT', '2FA_VERIFIED', '2FA_FAILED', 'PASSWORD_RESET', 'USER_DELETED', 'DB_RESET', 'CONFIG_UPDATE'
+    user_email = Column(String, nullable=True)
+    user_id = Column(String, nullable=True)
+    status = Column(String, default="SUCCESS")  # 'SUCCESS', 'WARNING', 'FAILED'
+    ip_address = Column(String, nullable=True)
+    details = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class SystemConfig(Base):
+    __tablename__ = "system_configs"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+

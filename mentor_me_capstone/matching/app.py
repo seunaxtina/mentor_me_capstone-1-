@@ -547,6 +547,118 @@ ORG_SIZES = [
     "Not stated"
 ]
 
+def display_match_compatibility_report(m: dict, partner_name: str = None, is_mentor_view: bool = False):
+    """
+    Renders an intuitive, human-friendly compatibility breakdown with narrative highlights,
+    visual percentage progress bars, and plain-English criteria explanations instead of raw histograms.
+    """
+    raw_score = m.get('total_score', 0)
+    pct_score = int(round(raw_score * 100)) if isinstance(raw_score, float) and raw_score <= 1.0 else int(round(raw_score))
+    
+    role_s = float(m.get('role_score', 0.8) or 0.8)
+    exp_s = float(m.get('experience_score', 0.8) or 0.8)
+    stage_s = float(m.get('career_stage_score', 1.0) or 1.0)
+    goals_s = float(m.get('goals_score', 0.7) or 0.7)
+    pract_s = float(m.get('practical_score', 0.9) or 0.9)
+    
+    role_pct = int(round(min(max(role_s, 0.0), 1.0) * 100))
+    exp_pct = int(round(min(max(exp_s, 0.0), 1.0) * 100))
+    stage_pct = int(round(min(max(stage_s, 0.0), 1.0) * 100))
+    goals_pct = int(round(min(max(goals_s, 0.0), 1.0) * 100))
+    pract_pct = int(round(min(max(pract_s, 0.0), 1.0) * 100))
+    
+    p_name = partner_name or m.get('mentor_name' if not is_mentor_view else 'mentee_name', 'your match')
+    
+    # ── 1. Confidence & Boost Badges ─────────────────────────────────────────
+    if pct_score >= 85:
+        tier_badge = "🌟 Exceptional Compatibility"
+        tier_color = "#15803d"
+    elif pct_score >= 70:
+        tier_badge = "🟢 Strong Compatibility"
+        tier_color = "#2563eb"
+    else:
+        tier_badge = "🟡 Moderate Fit"
+        tier_color = "#d97706"
+        
+    st.markdown(
+        f"""
+        <div style="background:#f8fafc; border-left: 4px solid {tier_color}; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:700; color:{tier_color}; font-size:1.05rem;">{tier_badge}</span>
+                <span style="font-size:1.15rem; font-weight:800; color:{tier_color};">{pct_score}% Overall Fit</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    if m.get('is_representation_boosted'):
+        st.info("🌟 **Gender Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields (UN SDG 5).")
+    if m.get('is_ally_boosted'):
+        st.info("🤝 **Diversity Ally Match (+10%)**: Mentor is a verified Diversity & Inclusion Ally dedicated to supporting women in technology.")
+        
+    # ── 2. Plain English Narrative Highlights ────────────────────────────────
+    roles_str = m.get('mentor_devtype' if not is_mentor_view else 'mentee_devtype', '')
+    first_role = roles_str.split(';')[0] if roles_str else 'Engineering'
+    
+    exp_gap = m.get('experience_gap')
+    if exp_gap is not None:
+        gap_desc = f"{abs(exp_gap):.0f} years of senior expertise" if exp_gap > 0 else "close peer-level experience"
+    else:
+        gap_desc = "complementary career seniority"
+        
+    st.markdown(f"💡 **Why this match works:** Recommended based on strong alignment in **{first_role}**, **{gap_desc}**, and shared workplace priorities.")
+    st.markdown("---")
+    
+    # ── 3. Factor-by-Factor Percentage Bars ──────────────────────────────────
+    st.markdown("**Detailed Criteria Breakdown:**")
+    
+    # Factor 1: Role Alignment (30%)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.markdown("**💻 Technical & Role Overlap (30% Weight)**")
+        st.progress(min(max(role_s, 0.0), 1.0))
+        st.caption(f"Measures programming specialization and skill overlap in {first_role}.")
+    with c2:
+        st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{role_pct}%</div>", unsafe_allow_html=True)
+        
+    # Factor 2: Experience Gap (25%)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.markdown("**⏳ Relatable Seniority Window (25% Weight)**")
+        st.progress(min(max(exp_s, 0.0), 1.0))
+        st.caption("Prioritizes an optimal 2–10 year experience distance for practical, actionable guidance.")
+    with c2:
+        st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{exp_pct}%</div>", unsafe_allow_html=True)
+
+    # Factor 3: Career Stage Priority (20%)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.markdown("**🎯 Retention-Risk Milestone Priority (20% Weight)**")
+        st.progress(min(max(stage_s, 0.0), 1.0))
+        st.caption("Empirical boost targeting critical retention drop-off windows (0–2y early career & 5–10y mid-career).")
+    with c2:
+        st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{stage_pct}%</div>", unsafe_allow_html=True)
+
+    # Factor 4: Goals Alignment (15%)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.markdown("**🌟 Workplace Priorities & Culture Fit (15% Weight)**")
+        st.progress(min(max(goals_s, 0.0), 1.0))
+        st.caption("Alignment across stated job factors (e.g. work-life balance, diversity signals, flex-time).")
+    with c2:
+        st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{goals_pct}%</div>", unsafe_allow_html=True)
+
+    # Factor 5: Practical Fit (10%)
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.markdown("**🏢 Organization Scale & Logistics (10% Weight)**")
+        st.progress(min(max(pract_s, 0.0), 1.0))
+        st.caption("Compatibility across company size and engineering team dynamics.")
+    with c2:
+        st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{pract_pct}%</div>", unsafe_allow_html=True)
+
+
 st.set_page_config(page_title="Mentoring-Me — Secure Matching Platform", layout="wide")
 
 st.title("🤝 Mentoring-Me — Secure Matching Platform")
@@ -3094,20 +3206,9 @@ else:
                                         del st.session_state['current_matches']
                                     st.rerun()
                                     
-                    with st.expander("📊 View Detailed Score Breakdown (Top Match)", expanded=False):
-                        st.subheader("Score Breakdown — Top Match")
+                    with st.expander("📊 View Detailed Compatibility Breakdown (Top Match)", expanded=False):
                         top = matches[0]
-                        if top.get('is_representation_boosted'):
-                            st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
-                        if top.get('is_ally_boosted'):
-                            st.info("🤝 **Diversity Ally Boost Applied (+10%)**: Mentee requested and was matched with an active Diversity & Inclusion Ally.")
-                        breakdown = pd.DataFrame({
-                            'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
-                                          'Goals alignment (15%)', 'Practical fit (10%)'],
-                            'Score': [top['role_score'], top['experience_score'], top['career_stage_score'],
-                                      top['goals_score'], top['practical_score']]
-                        })
-                        st.bar_chart(breakdown.set_index('Criterion'))
+                        display_match_compatibility_report(top)
             
             with tab_messages:
                 render_messages_page("MENTEE", profile, history)
@@ -3241,17 +3342,7 @@ else:
                                 )
 
                             with st.expander(f"📊 View Compatibility Breakdown ({score}%)", expanded=False):
-                                if h.get('is_representation_boosted'):
-                                    st.info("🌟 **Representation Boost Applied (+10%)**: Promotes female role models and senior leadership connections in technical fields.")
-                                if h.get('is_ally_boosted'):
-                                    st.info("🤝 **Diversity Ally Match**: This mentor is an active Diversity & Inclusion Ally.")
-                                h_breakdown = pd.DataFrame({
-                                    'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
-                                                  'Goals alignment (15%)', 'Practical fit (10%)'],
-                                    'Score': [h.get('role_score', 0), h.get('experience_score', 0), h.get('career_stage_score', 0),
-                                              h.get('goals_score', 0), h.get('practical_score', 0)]
-                                })
-                                st.bar_chart(h_breakdown.set_index('Criterion'))
+                                display_match_compatibility_report(h)
 
                             # Connected mentor — show full action expanders
                             if status == 'ACCEPTED':
@@ -4743,13 +4834,7 @@ else:
                                     display_pdf_inline(pdf_bytes)
 
                         with st.expander(f"📊 View Compatibility Breakdown ({m_score}%)", expanded=False):
-                            m_breakdown = pd.DataFrame({
-                                'Criterion': ['Role alignment (30%)', 'Experience gap (25%)', 'Career-stage priority (20%)',
-                                              'Goals alignment (15%)', 'Practical fit (10%)'],
-                                'Score': [mh.get('role_score', 0), mh.get('experience_score', 0), mh.get('career_stage_score', 0),
-                                          mh.get('goals_score', 0), mh.get('practical_score', 0)]
-                            })
-                            st.bar_chart(m_breakdown.set_index('Criterion'))
+                            display_match_compatibility_report(mh, is_mentor_view=True)
 
                         if mh.get('status') == 'ACCEPTED':
                             if st.button(f"💬 Open Chat with {mh['mentee_name']} in Messages Hub", key=f"mhist_chat_btn_{mh['id']}", use_container_width=True):

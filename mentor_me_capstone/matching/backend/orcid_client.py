@@ -177,52 +177,52 @@ def calculate_general_match(candidate: dict, mentee: models.Mentee):
 
 CURATED_ORCID_MENTORS = [
     {
-        "name": "Prof. Alison Noble",
-        "orcid_id": "0000-0002-8059-8664",
-        "country": "GB",
-        "institution": "University of Oxford",
-        "tech_focus": "Professor of Biomedical Engineering: AI, Machine Learning & Computer Vision",
-        "biography": "Technologist and Fellow of the Royal Society, researching artificial intelligence and biomedical image analysis.",
-        "keywords": ["Artificial Intelligence", "Machine Learning", "Computer Vision", "Healthcare AI", "Python"],
-        "years_experience": 20.0,
-        "public_email": "alison.noble@eng.ox.ac.uk",
-        "linkedin_url": "https://www.linkedin.com/in/alison-noble-oxford"
+        "name": "Prof. Cynthia Dwork",
+        "orcid_id": "0000-0001-7037-2449",
+        "country": "US",
+        "institution": "Harvard University",
+        "tech_focus": "Gordon McKay Professor of Computer Science: Differential Privacy, Cryptography & Algorithmic Fairness",
+        "biography": "Pioneering computer scientist known for inventing Differential Privacy and advancing algorithmic fairness in AI.",
+        "keywords": ["Computer Science", "Artificial Intelligence", "Cryptography", "Data Privacy", "Fairness in AI", "Algorithms"],
+        "years_experience": 25.0,
+        "public_email": "dwork@seas.harvard.edu",
+        "linkedin_url": "https://www.linkedin.com/in/cynthia-dwork"
     },
     {
-        "name": "Dr. Mirella Lapata",
-        "orcid_id": "0000-0003-3450-4105",
-        "country": "GB",
-        "institution": "University of Edinburgh",
-        "tech_focus": "Chair in Natural Language Processing: LLMs, Computational Linguistics & Deep Learning",
-        "biography": "Researcher focusing on NLP, natural language understanding, neural models, and transformers.",
-        "keywords": ["Natural Language Processing", "Deep Learning", "LLMs", "Python", "Transformers"],
+        "name": "Dr. Sarah Diesburg",
+        "orcid_id": "0000-0001-8558-1980",
+        "country": "US",
+        "institution": "University of Northern Iowa",
+        "tech_focus": "Associate Professor of Computer Science: Systems, Storage Architecture & Security",
+        "biography": "Researcher and educator in computer systems, file systems, security, and mentoring women in computing.",
+        "keywords": ["Computer Science", "Software Engineering", "Systems Architecture", "Security", "Python"],
+        "years_experience": 15.0,
+        "public_email": "diesburg@cs.uni.edu",
+        "linkedin_url": "https://www.linkedin.com/in/sarahdiesburg"
+    },
+    {
+        "name": "Dr. Sarah Monisha Pulimood",
+        "orcid_id": "0000-0001-8223-4609",
+        "country": "US",
+        "institution": "The College of New Jersey",
+        "tech_focus": "Professor & Chair of Computer Science: Distributed Computing & AI Ethics",
+        "biography": "Academic leader researching computational journalism, distributed systems, and collaborative computing.",
+        "keywords": ["Computer Science", "Distributed Systems", "AI Ethics", "Data Science", "Algorithms"],
         "years_experience": 18.0,
-        "public_email": "mlap@inf.ed.ac.uk",
-        "linkedin_url": "https://www.linkedin.com/in/mirella-lapata"
+        "public_email": "pulimood@tcnj.edu",
+        "linkedin_url": "https://www.linkedin.com/in/monisha-pulimood"
     },
     {
-        "name": "Prof. Roseanne Diab",
-        "orcid_id": "0000-0002-3921-2292",
-        "country": "ZA",
-        "institution": "University of KwaZulu-Natal",
-        "tech_focus": "Director of GenderInSITE: STEM Education, Data Science & Research Leadership",
-        "biography": "Academic leader advocating for women in STEM and gender-equitable technical career frameworks.",
-        "keywords": ["Data Analysis", "Research Leadership", "STEM Policy", "Gender Equity"],
-        "years_experience": 22.0,
-        "public_email": "diab@ukzn.ac.za",
-        "linkedin_url": "https://www.linkedin.com/in/roseanne-diab"
-    },
-    {
-        "name": "Dr. Chika Yinka-Banjo",
-        "orcid_id": "0000-0002-7633-8755",
-        "country": "NG",
-        "institution": "University of Lagos",
-        "tech_focus": "Associate Professor: AI Robotics, Autonomous Systems & Python Architecture",
-        "biography": "Lead researcher in Artificial Intelligence and Robotics, empowering African women in tech and engineering.",
-        "keywords": ["Robotics", "Artificial Intelligence", "Python", "Machine Learning", "Autonomous Systems"],
+        "name": "Dr. Sarah Markham",
+        "orcid_id": "0000-0002-8755-5935",
+        "country": "GB",
+        "institution": "King's College London",
+        "tech_focus": "Senior Researcher in AI & Healthcare Informatics: Data Science & AI Ethics",
+        "biography": "Health data scientist and statistician researching patient data analytics, predictive models, and ethical AI in the UK.",
+        "keywords": ["Data Science", "Healthcare AI", "Statistics", "Machine Learning", "Python"],
         "years_experience": 14.0,
-        "public_email": "cyinkabanjo@unilag.edu.ng",
-        "linkedin_url": "https://www.linkedin.com/in/chika-yinka-banjo"
+        "public_email": "sarah.markham@kcl.ac.uk",
+        "linkedin_url": "https://www.linkedin.com/in/sarah-markham"
     }
 ]
 

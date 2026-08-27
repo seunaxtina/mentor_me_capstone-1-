@@ -100,7 +100,7 @@ def test_diversity_ally_matching():
 
     # 4. Fetch Matches & Verify Scoring Boost
     print("\n4. Fetching matches and verifying scores...")
-    response = client.get(f"{API_URL}/matches?limit=100", headers=mentee_headers)
+    response = client.get(f"{API_URL}/matches?limit=1000", headers=mentee_headers)
     matches = response.json()
 
     ally_match = None

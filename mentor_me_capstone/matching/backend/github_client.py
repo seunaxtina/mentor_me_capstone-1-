@@ -8,59 +8,70 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 CURATED_GITHUB_MENTORS = [
     {
-        "name": "Dr. Sarah Jenkins",
-        "username": "sarah-jenkins-cloud",
+        "name": "Mariatta Wijaya",
+        "username": "mariatta",
+        "country": "Canada",
+        "company": "Python Software Foundation / PyLadies",
+        "tech_focus": "Python Core Developer: Python, APIs & Open Source Leadership",
+        "skills": ["Python", "APIs", "Open Source", "Automation", "Git", "DevOps"],
+        "years_experience": 15.0,
+        "public_email": "mariatta@python.org",
+        "linkedin_url": "https://www.linkedin.com/in/mariatta"
+    },
+    {
+        "name": "Carol Willing",
+        "username": "willingc",
+        "country": "United States",
+        "company": "Project Jupyter / Python Steering Council",
+        "tech_focus": "Core Developer: Python, Cloud Computing, Jupyter & Scientific Systems",
+        "skills": ["Python", "Cloud Architecture", "Jupyter", "Docker", "DevOps", "Kubernetes"],
+        "years_experience": 20.0,
+        "public_email": "carol@willingconsulting.com",
+        "linkedin_url": "https://www.linkedin.com/in/carolwilling"
+    },
+    {
+        "name": "Ines Montani",
+        "username": "ines",
         "country": "United Kingdom",
-        "company": "Amazon Web Services (AWS)",
-        "tech_focus": "Principal Engineer: Cloud Architecture, Kubernetes & Distributed Systems",
-        "skills": ["AWS", "Kubernetes", "Python", "Go", "Docker", "DevOps", "Cloud Architecture"],
+        "company": "Explosion (spaCy)",
+        "tech_focus": "Founder & CEO: Natural Language Processing, Machine Learning & Python Architecture",
+        "skills": ["Python", "NLP", "Machine Learning", "FastAPI", "spaCy", "AI", "Data Science"],
         "years_experience": 12.0,
-        "public_email": "sarah.jenkins@awscommunity.org",
-        "linkedin_url": "https://www.linkedin.com/in/sarah-jenkins-cloud"
+        "public_email": "ines@explosion.ai",
+        "linkedin_url": "https://www.linkedin.com/in/inesmontani"
     },
     {
-        "name": "Elena Rostova",
-        "username": "erostova-ai",
-        "country": "United Kingdom",
-        "company": "DeepMind Partner Lab",
-        "tech_focus": "Lead Research Engineer: PyTorch, ML Ops & Scalable Data Pipelines",
-        "skills": ["Python", "PyTorch", "Machine Learning", "FastAPI", "Docker", "Data Engineering"],
-        "years_experience": 10.0,
-        "public_email": "e.rostova@ai-research.org",
-        "linkedin_url": "https://www.linkedin.com/in/elena-rostova-ai"
+        "name": "Audrey Roy Greenfeld",
+        "username": "audreyfeldroy",
+        "country": "United States",
+        "company": "Cookiecutter / PyLadies Co-Founder",
+        "tech_focus": "Lead Architect: Full-Stack Web Development, Django & System Architecture",
+        "skills": ["Python", "Django", "React", "Full-Stack", "JavaScript", "SQL", "Cloud"],
+        "years_experience": 16.0,
+        "public_email": "audrey@feldroy.com",
+        "linkedin_url": "https://www.linkedin.com/in/audreyr"
     },
     {
-        "name": "Maya Patel",
-        "username": "mayapatel-tech",
-        "country": "United Kingdom",
-        "company": "Revolut",
-        "tech_focus": "Engineering Director: React, TypeScript & Microservices Architecture",
-        "skills": ["React", "TypeScript", "Node", "Python", "GraphQL", "Frontend", "Full-Stack"],
-        "years_experience": 11.0,
-        "public_email": "maya.patel@fintech-leads.co.uk",
-        "linkedin_url": "https://www.linkedin.com/in/maya-patel-arch"
+        "name": "Jessica McKellar",
+        "username": "jesstess",
+        "country": "United States",
+        "company": "Pilot.com / Ex-Dropbox Director",
+        "tech_focus": "Founder & CTO: Distributed Systems, Cloud Infrastructure & Engineering Leadership",
+        "skills": ["Python", "Linux", "Distributed Systems", "Cloud Security", "DevOps", "PostgreSQL"],
+        "years_experience": 18.0,
+        "public_email": "jesstess@mit.edu",
+        "linkedin_url": "https://www.linkedin.com/in/jessicamckellar"
     },
     {
-        "name": "Folake Adeleke",
-        "username": "folake-adeleke-dev",
-        "country": "Nigeria",
-        "company": "Microsoft",
-        "tech_focus": "Senior Solutions Architect: Azure, Data Platforms & Enterprise DevOps",
-        "skills": ["Azure", "Python", "SQL", "DevOps", "Cloud Architecture", "Docker"],
-        "years_experience": 9.0,
-        "public_email": "folake.adeleke@cloudafrica.org",
-        "linkedin_url": "https://www.linkedin.com/in/folake-adeleke"
-    },
-    {
-        "name": "Dr. Amina Bello",
-        "username": "aminabello-tech",
-        "country": "Nigeria",
-        "company": "Flutterwave",
-        "tech_focus": "VP of Engineering: Distributed Fintech Systems & Cloud Security",
-        "skills": ["Python", "Go", "Cloud Security", "PostgreSQL", "FastAPI", "Fintech"],
-        "years_experience": 14.0,
-        "public_email": "amina.bello@fintechleaders.ng",
-        "linkedin_url": "https://www.linkedin.com/in/amina-bello-vp"
+        "name": "Sara Soueidan",
+        "username": "SaraSoueidan",
+        "country": "Lebanon",
+        "company": "Web Standards & UI Architecture",
+        "tech_focus": "Principal UI & Design Systems Engineer: Frontend, Web Accessibility, CSS & React",
+        "skills": ["JavaScript", "Frontend", "HTML", "CSS", "Design Systems", "Web Performance"],
+        "years_experience": 12.0,
+        "public_email": "sara@sarasoueidan.com",
+        "linkedin_url": "https://www.linkedin.com/in/sarasoueidan"
     }
 ]
 

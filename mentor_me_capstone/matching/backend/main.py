@@ -2187,6 +2187,89 @@ def reset_database(
         raise HTTPException(status_code=500, detail=f"Database reset failed: {str(e)}")
 
 
+@app.get("/api/v1/admin/users")
+def get_all_registered_users(
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    users = db.query(models.User).order_by(models.User.created_at.desc()).all()
+    results = []
+    for u in users:
+        display_name = u.name
+        country = None
+        years_exp = None
+        if not display_name and u.mentee_profile:
+            display_name = u.mentee_profile.name
+            country = u.mentee_profile.country
+            years_exp = u.mentee_profile.years_code_pro
+        elif not display_name and u.mentor_profile:
+            display_name = u.mentor_profile.name
+            country = u.mentor_profile.country
+            years_exp = u.mentor_profile.years_code_pro
+            
+        results.append({
+            "id": u.id,
+            "email": u.email,
+            "name": display_name or "Unnamed User",
+            "role": u.role,
+            "is_active": u.is_active,
+            "two_factor_enabled": u.two_factor_enabled,
+            "auth_provider": u.auth_provider or "LOCAL",
+            "country": country or "Not Specified",
+            "years_exp": years_exp if years_exp is not None else "N/A",
+            "created_at": u.created_at.isoformat() if u.created_at else ""
+        })
+    return results
+
+
+@app.delete("/api/v1/admin/users/{user_id}")
+def delete_user_account(
+    user_id: str,
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own active admin account.")
+        
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+        
+    target_email = target_user.email
+    
+    # 1. Cascade delete all messages involving this user
+    db.query(models.Message).filter(
+        (models.Message.sender_id == user_id) | (models.Message.recipient_id == user_id)
+    ).delete(synchronize_session=False)
+    
+    # 2. Cascade delete all matches involving this user
+    db.query(models.Match).filter(
+        (models.Match.mentee_id == user_id) | (models.Match.mentor_id == user_id)
+    ).delete(synchronize_session=False)
+    
+    # 3. Cascade delete all nominations involving this user
+    db.query(models.ExternalNomination).filter(
+        models.ExternalNomination.mentee_id == user_id
+    ).delete(synchronize_session=False)
+    
+    # 4. Cascade delete password reset tokens
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.user_id == user_id
+    ).delete(synchronize_session=False)
+    
+    # 5. Delete specific role profile
+    if target_user.mentee_profile:
+        db.delete(target_user.mentee_profile)
+    if target_user.mentor_profile:
+        db.delete(target_user.mentor_profile)
+        
+    # 6. Delete user credential record
+    db.delete(target_user)
+    db.commit()
+    
+    return {"message": f"User account {target_email} and all associated credentials/data have been permanently deleted."}
+
+
 @app.post("/api/v1/matches/{match_id}/send-email", response_model=schemas.DirectEmailResponse)
 def send_direct_match_email(
     match_id: str,

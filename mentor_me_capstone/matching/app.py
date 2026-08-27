@@ -1218,6 +1218,27 @@ def api_reset_database():
     except Exception as e:
         return False, f"Error reaching API: {str(e)}"
 
+def api_admin_get_users():
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.get(f"{API_URL}/admin/users", headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_admin_delete_user(user_id: str):
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.delete(f"{API_URL}/admin/users/{user_id}", headers=headers)
+        if response.status_code == 200:
+            return True, response.json().get("message", "User deleted successfully.")
+        detail = response.json().get("detail", "Failed to delete user.")
+        return False, detail
+    except Exception as e:
+        return False, f"API Connection Error: {str(e)}"
+
 def api_forgot_password(email: str):
     try:
         response = api_http.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
@@ -4895,10 +4916,91 @@ else:
             st.dataframe(pd.DataFrame(admin_list), use_container_width=True)
 
         # ════════════════════════════════════════════════════════════════════
-        # SECTION C — System Tools
+        # SECTION C — Registered User & Credential Management
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
-        st.subheader("⚙️ System Administration Tools")
+        st.subheader("👥 Registered User & Credential Management")
+        st.caption("Inspect real registered accounts, monitor authentication status, and permanently revoke credentials or delete accounts (GDPR Compliance).")
+
+        all_users = api_admin_get_users()
+        if not all_users:
+            st.info("No registered users retrieved.")
+        else:
+            total_u = len(all_users)
+            mentees_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE')
+            mentors_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR')
+            two_fa_u  = sum(1 for u in all_users if u.get('two_factor_enabled'))
+
+            uc1, uc2, uc3, uc4 = st.columns(4)
+            uc1.metric("👥 Total Accounts", total_u)
+            uc2.metric("👩‍💻 Mentees", mentees_u)
+            uc3.metric("🧑‍🏫 Mentors", mentors_u)
+            uc4.metric("🔒 2FA Enabled", two_fa_u)
+
+            # Search & Filter Controls
+            st.markdown("")
+            uf_c1, uf_c2 = st.columns([2, 1])
+            with uf_c1:
+                search_q = st.text_input("🔍 Search Users by Email, Name, or Country", placeholder="e.g. jane@example.com or Sarah").strip().lower()
+            with uf_c2:
+                role_filter = st.selectbox("Filter by Role", ["All Roles", "MENTEE", "MENTOR", "ADMIN"])
+
+            filtered_users = all_users
+            if role_filter != "All Roles":
+                filtered_users = [u for u in filtered_users if (u.get('role') or '').upper() == role_filter]
+            if search_q:
+                filtered_users = [
+                    u for u in filtered_users
+                    if search_q in (u.get('email') or '').lower()
+                    or search_q in (u.get('name') or '').lower()
+                    or search_q in (u.get('country') or '').lower()
+                ]
+
+            st.caption(f"Showing {len(filtered_users)} of {total_u} user accounts.")
+
+            for u_item in filtered_users:
+                u_id = u_item['id']
+                u_email = u_item.get('email', '')
+                u_name = u_item.get('name', 'Unnamed User')
+                u_role = (u_item.get('role') or 'MENTEE').upper()
+                u_2fa = "🔒 2FA Active" if u_item.get('two_factor_enabled') else "🔓 2FA Off"
+                u_provider = u_item.get('auth_provider', 'LOCAL')
+                u_country = u_item.get('country', 'Not Specified')
+                u_created = u_item.get('created_at', '').split('T')[0] if 'T' in u_item.get('created_at', '') else u_item.get('created_at', '')
+
+                badge_bg = "#e3f2fd" if u_role == "MENTEE" else ("#e8f5e9" if u_role == "MENTOR" else "#f3e5f5")
+                badge_color = "#0d47a1" if u_role == "MENTEE" else ("#1b5e20" if u_role == "MENTOR" else "#4a148c")
+
+                with st.container(border=True):
+                    ul_c, ur_c = st.columns([3, 1])
+                    with ul_c:
+                        st.markdown(f"**{u_name}** (`{u_email}`)")
+                        st.markdown(
+                            f"<span style='background:{badge_bg}; color:{badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{u_role}</span>  "
+                            f"<span style='background:#f5f5f5; color:#424242; padding:2px 8px; border-radius:10px; font-size:0.75rem;'>{u_2fa}</span>  "
+                            f"<span style='color:#757575; font-size:0.8rem;'>📍 {u_country} · Auth: {u_provider} · Registered {u_created}</span>",
+                            unsafe_allow_html=True
+                        )
+                    with ur_c:
+                        if u_role == "ADMIN":
+                            st.caption("🛡️ Primary Admin")
+                        else:
+                            with st.popover(f"🗑️ Delete Account", use_container_width=True):
+                                st.warning(f"Are you sure you want to delete **{u_email}**?")
+                                st.caption("This will permanently delete their login credentials, profile, chat history, and match records.")
+                                if st.button(f"Confirm Permanent Deletion", key=f"del_user_btn_{u_id}", type="primary", use_container_width=True):
+                                    ok_d, msg_d = api_admin_delete_user(u_id)
+                                    if ok_d:
+                                        st.success(f"✅ {msg_d}")
+                                        st.rerun()
+                                    else:
+                                        st.error(msg_d)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION D — System Tools (Danger Zone)
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("⚙️ System Reset & Database Tools")
         st.warning("⚠️ **Danger Zone**: Wiping the database is permanent and deletes all users, mentors, mentees, matches, and external invitations.")
         st.write("This tool allows resetting the database to a completely clean slate, ready for real users to sign up and test.")
 

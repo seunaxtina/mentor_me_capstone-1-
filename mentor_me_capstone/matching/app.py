@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import datetime
+import urllib.parse
 import streamlit as st
 import requests
 import pandas as pd
@@ -4893,6 +4894,12 @@ else:
                             link_badges.append(f"[🔗 {results_src} Profile]({candidate['contact']})")
                             if candidate.get('linkedin_url'):
                                 link_badges.append(f"[🌐 LinkedIn]({candidate['linkedin_url']})")
+                            elif candidate.get('name'):
+                                cand_name_q = urllib.parse.quote(candidate['name'])
+                                cand_tech_q = urllib.parse.quote((candidate.get('tech_focus') or '').split(',')[0].strip())
+                                fallback_li_url = f"https://www.linkedin.com/search/results/people/?keywords={cand_name_q}%20{cand_tech_q}"
+                                link_badges.append(f"[🌐 Search on LinkedIn]({fallback_li_url})")
+
                             if candidate.get('other_urls'):
                                 for u_idx, u_val in enumerate(candidate['other_urls'][:2]):
                                     link_badges.append(f"[🏠 Website {u_idx+1}]({u_val})")

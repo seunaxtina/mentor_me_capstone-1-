@@ -1,10 +1,80 @@
-import requests
-import datetime
 import os
+import re
+import datetime
+import urllib.parse
 import urllib3
+import requests
 from . import models, profile_evaluator
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+def normalize_linkedin_url(raw: str) -> str:
+    if not raw or not isinstance(raw, str):
+        return None
+    raw = raw.strip().strip("'\"()[]<>.,; \t\n\r")
+    if not raw:
+        return None
+    
+    # 1. Handle in/username or /in/username (e.g. in/blessman-newton-a7a80a251L)
+    if raw.lower().startswith("in/") or raw.lower().startswith("/in/"):
+        slug = raw.lstrip("/").split()[0].rstrip("/.,;)>]}'")
+        return f"https://www.linkedin.com/{slug}"
+        
+    # 2. Handle linkedin.com/in/... or www.linkedin.com/in/... or https://...
+    if "linkedin.com" in raw.lower():
+        match = re.search(r'(https?://[^\s]+|www\.linkedin\.com/[^\s]+|linkedin\.com/[^\s]+)', raw, re.IGNORECASE)
+        if match:
+            url = match.group(1).rstrip("/.,;)>]}'")
+            if not url.startswith("http://") and not url.startswith("https://"):
+                url = f"https://{url}"
+            return url.replace("http://", "https://")
+            
+    return None
+
+def extract_linkedin_from_github_user(username: str, user_data: dict, headers: dict) -> tuple[str, list]:
+    linkedin_url = None
+    other_urls = []
+    
+    # A. Check blog field
+    blog = user_data.get("blog")
+    if blog:
+        norm_l = normalize_linkedin_url(blog)
+        if norm_l:
+            linkedin_url = norm_l
+        else:
+            other_urls.append(blog if blog.startswith("http") else f"https://{blog}")
+            
+    # B. Check bio for in/slug or linkedin.com/in/
+    bio = user_data.get("bio") or ""
+    if not linkedin_url and bio:
+        for token in bio.replace("\n", " ").replace(",", " ").split():
+            norm_l = normalize_linkedin_url(token)
+            if norm_l:
+                linkedin_url = norm_l
+                break
+                
+    # C. Query GitHub Social Accounts API (GET /users/{username}/social_accounts)
+    if not linkedin_url:
+        try:
+            soc_url = f"https://api.github.com/users/{username}/social_accounts"
+            soc_res = requests.get(soc_url, headers=headers, verify=False, timeout=2)
+            if soc_res.status_code == 200:
+                accounts = soc_res.json()
+                if isinstance(accounts, list):
+                    for acc in accounts:
+                        acc_url = acc.get("url") or ""
+                        acc_prov = (acc.get("provider") or "").lower()
+                        if acc_prov == "linkedin" or "linkedin.com" in acc_url.lower() or acc_url.lower().startswith("in/"):
+                            norm_l = normalize_linkedin_url(acc_url)
+                            if norm_l:
+                                linkedin_url = norm_l
+                                break
+                        elif acc_url:
+                            other_urls.append(acc_url if acc_url.startswith("http") else f"https://{acc_url}")
+        except Exception:
+            pass
+            
+    return linkedin_url, other_urls
 
 CURATED_GITHUB_MENTORS = [
     {
@@ -125,18 +195,7 @@ def search_github_mentors(keyword: str, country: str, mentee: models.Mentee):
                     if user_res.status_code == 200:
                         user_data = user_res.json()
                         public_email = user_data.get("email")
-                        blog = user_data.get("blog")
-                        bio = user_data.get("bio") or ""
-                        if blog:
-                            if "linkedin.com/in/" in blog.lower():
-                                linkedin_url = blog if blog.startswith("http") else f"https://{blog}"
-                            else:
-                                other_urls.append(blog if blog.startswith("http") else f"https://{blog}")
-                        if not linkedin_url and "linkedin.com/in/" in bio.lower():
-                            for w in bio.split():
-                                if "linkedin.com/in/" in w.lower():
-                                    linkedin_url = w if w.startswith("http") else f"https://{w}"
-                                    break
+                        linkedin_url, other_urls = extract_linkedin_from_github_user(username, user_data, headers)
                 except Exception:
                     pass
                     

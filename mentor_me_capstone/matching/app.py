@@ -1692,6 +1692,298 @@ The integrated **Milestones & Session Notes** module provides structured 1-on-1 
 """
     return report_md
 
+def generate_matches_html_dossier(history):
+    total = len(history) if history else 0
+    accepted = [h for h in history if h.get('status') == 'ACCEPTED'] if history else []
+    acc_rate = (len(accepted) / total * 100) if total else 0.0
+    avg_score = (sum(h.get('total_score', 0) for h in accepted) / len(accepted) * 100) if accepted else 0.0
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    rows_html = ""
+    for idx, h in enumerate(history or []):
+        raw_s = h.get('total_score', 0)
+        pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
+        status = h.get('status', 'REQUESTED')
+        st_bg = "#ecfdf5" if status == "ACCEPTED" else ("#fef3c7" if status == "REQUESTED" else "#f1f5f9")
+        st_color = "#047857" if status == "ACCEPTED" else ("#b45309" if status == "REQUESTED" else "#475569")
+        st_border = "#a7f3d0" if status == "ACCEPTED" else ("#fde68a" if status == "REQUESTED" else "#cbd5e1")
+        
+        conf = h.get('match_quality', 'Good')
+        cf_bg = "#dcfce7" if conf == "Strong" else ("#dbeafe" if conf == "Good" else ("#fef9c3" if conf == "Fair" else "#fee2e2"))
+        cf_color = "#15803d" if conf == "Strong" else ("#1d4ed8" if conf == "Good" else ("#a16207" if conf == "Fair" else "#b91c1c"))
+        
+        boosts = []
+        if h.get('is_representation_boosted'):
+            boosts.append("<span style='background:#fdf2f8;color:#be185d;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;'>🌟 Representation</span>")
+        if h.get('is_ally_boosted'):
+            boosts.append("<span style='background:#eff6ff;color:#1d4ed8;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;'>🤝 D&I Ally</span>")
+        boost_str = " ".join(boosts) if boosts else "<span style='color:#94a3b8;'>—</span>"
+        
+        m_date = h.get('created_at', '')[:10]
+        
+        rows_html += f"""
+        <tr style="background:{'#f8fafc' if idx % 2 == 1 else '#ffffff'};">
+            <td style="padding:10px 12px;font-family:monospace;font-size:12px;color:#64748b;">#{h.get('id', '')[:8]}</td>
+            <td style="padding:10px 12px;font-weight:600;color:#0f172a;">{h.get('mentee_name', 'Mentee')}</td>
+            <td style="padding:10px 12px;font-weight:600;color:#0f172a;">{h.get('mentor_name', 'Mentor')}</td>
+            <td style="padding:10px 12px;text-align:center;">
+                <span style="background:#f1f5f9;color:#0f172a;padding:3px 8px;border-radius:6px;font-weight:700;font-size:13px;">{pct_s}%</span>
+            </td>
+            <td style="padding:10px 12px;text-align:center;">
+                <span style="background:{cf_bg};color:{cf_color};padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">{conf}</span>
+            </td>
+            <td style="padding:10px 12px;text-align:center;">
+                <span style="background:{st_bg};color:{st_color};border:1px solid {st_border};padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">{status}</span>
+            </td>
+            <td style="padding:10px 12px;text-align:center;">{boost_str}</td>
+            <td style="padding:10px 12px;font-size:12px;color:#64748b;text-align:right;">{m_date}</td>
+        </tr>
+        """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mentoring-Me — Match Outcomes Dossier</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }}
+        .container {{ max-width: 1100px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; overflow: hidden; }}
+        .header {{ background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #ffffff; padding: 28px 32px; }}
+        .header h1 {{ margin: 0 0 6px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }}
+        .header p {{ margin: 0; color: #94a3b8; font-size: 13px; }}
+        .kpi-row {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 24px 32px 12px 32px; }}
+        .kpi-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; text-align: center; }}
+        .kpi-card .val {{ font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 2px; }}
+        .kpi-card .lbl {{ font-size: 11px; text-transform: uppercase; font-weight: 600; color: #64748b; letter-spacing: 0.5px; }}
+        .table-wrap {{ padding: 16px 32px 32px 32px; }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+        th {{ background: #1e293b; color: #ffffff; text-align: left; padding: 10px 12px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        th:first-child {{ border-top-left-radius: 6px; }}
+        th:last-child {{ border-top-right-radius: 6px; }}
+        .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 32px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }}
+        .print-btn {{ background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; }}
+        @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border: none; max-width: 100%; }} .no-print {{ display: none; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <h1>🛡️ Mentoring-Me — Match Outcomes Dossier</h1>
+                    <p>Comprehensive algorithmic pairing records & compatibility transactions · Generated: {now_str}</p>
+                </div>
+                <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+            </div>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi-card"><div class="val">{total}</div><div class="lbl">Total Matches</div></div>
+            <div class="kpi-card"><div class="val">{len(accepted)}</div><div class="lbl">Accepted Pairs</div></div>
+            <div class="kpi-card"><div class="val">{acc_rate:.1f}%</div><div class="lbl">Acceptance Rate</div></div>
+            <div class="kpi-card"><div class="val">{avg_score:.1f}%</div><div class="lbl">Mean Score</div></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Mentee</th>
+                        <th>Mentor</th>
+                        <th style="text-align:center;">Score</th>
+                        <th style="text-align:center;">Quality</th>
+                        <th style="text-align:center;">Status</th>
+                        <th style="text-align:center;">Boosts</th>
+                        <th style="text-align:right;">Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html if rows_html else '<tr><td colspan="8" style="padding:24px;text-align:center;color:#64748b;">No match transactions recorded yet.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+        <div class="footer">
+            <span>Mentoring-Me Platform · UN Sustainable Development Goal 5 Evaluation</span>
+            <span>Confidential Academic & Governance Dossier</span>
+        </div>
+    </div>
+</body>
+</html>"""
+
+def generate_sdg5_html_dossier(sdg_summary_data):
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    metrics = sdg_summary_data.get('metric', [])
+    values = sdg_summary_data.get('value', [])
+    
+    rows_html = ""
+    for idx, (m, v) in enumerate(zip(metrics, values)):
+        rows_html += f"""
+        <tr style="background:{'#f8fafc' if idx % 2 == 1 else '#ffffff'};">
+            <td style="padding:12px 16px;font-weight:600;color:#0f172a;">{m}</td>
+            <td style="padding:12px 16px;font-weight:700;color:#e11d48;text-align:right;font-size:14px;">{v}</td>
+        </tr>
+        """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mentoring-Me — UN SDG 5 Social Impact Dossier</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff1f2; margin: 0; padding: 24px; color: #1e293b; }}
+        .container {{ max-width: 900px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 16px rgba(225,29,72,0.08); border: 1px solid #fecdd3; overflow: hidden; }}
+        .header {{ background: linear-gradient(135deg, #e11d48 0%, #be123c 100%); color: #ffffff; padding: 28px 32px; }}
+        .header h1 {{ margin: 0 0 6px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }}
+        .header p {{ margin: 0; color: #ffe4e6; font-size: 13px; }}
+        .badge {{ display: inline-block; background: rgba(255,255,255,0.2); color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; }}
+        .table-wrap {{ padding: 24px 32px 32px 32px; }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden; }}
+        th {{ background: #0f172a; color: #ffffff; text-align: left; padding: 12px 16px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .impact-box {{ background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 16px; margin-bottom: 24px; font-size: 13px; line-height: 1.5; color: #9f1239; }}
+        .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 32px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }}
+        .print-btn {{ background: #ffffff; color: #e11d48; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; }}
+        @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border: none; max-width: 100%; }} .no-print {{ display: none; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div class="badge">United Nations Sustainable Development Goal 5</div>
+                    <h1>🌟 Gender Equality & STEM Empowerment Dossier</h1>
+                    <p>Quantitative social impact metrics & diversity telemetry · Generated: {now_str}</p>
+                </div>
+                <button class="print-btn no-print" onclick="window.print()">🖨️ Print / PDF</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <div class="impact-box">
+                <strong>Target Commitment:</strong> Promoting retention, career progression, and relatable role-model sponsorship for early-career and mid-level women engineers in tech.
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Performance Indicator</th>
+                        <th style="text-align:right;">Institutional Metric Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </div>
+        <div class="footer">
+            <span>Mentoring-Me Governance · SDG 5 Impact Verification</span>
+            <span>Institutional Grant & Audit Report</span>
+        </div>
+    </div>
+</body>
+</html>"""
+
+def generate_user_directory_html_dossier(all_users):
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    total_u = len(all_users) if all_users else 0
+    mentees = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE') if all_users else 0
+    mentors = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR') if all_users else 0
+    twofa_count = sum(1 for u in all_users if u.get('two_factor_enabled')) if all_users else 0
+    twofa_pct = (twofa_count / total_u * 100) if total_u else 0.0
+
+    rows_html = ""
+    for idx, u in enumerate(all_users or []):
+        role_str = (u.get('role') or 'MENTEE').upper()
+        r_bg = "#eff6ff" if role_str == "MENTEE" else ("#ecfdf5" if role_str == "MENTOR" else "#fef2f2")
+        r_color = "#1d4ed8" if role_str == "MENTEE" else ("#047857" if role_str == "MENTOR" else "#b91c1c")
+        r_icon = "👩‍💻" if role_str == "MENTEE" else ("🧑‍🏫" if role_str == "MENTOR" else "🛡️")
+        
+        has_2fa = u.get('two_factor_enabled', False)
+        fa_bg = "#ecfdf5" if has_2fa else "#fffbeb"
+        fa_color = "#047857" if has_2fa else "#b45309"
+        fa_label = "🔒 2FA Active" if has_2fa else "⚠️ Standard Password"
+        
+        c_date = (u.get('created_at', '') or '')[:10]
+        
+        rows_html += f"""
+        <tr style="background:{'#f8fafc' if idx % 2 == 1 else '#ffffff'};">
+            <td style="padding:10px 14px;font-weight:600;color:#0f172a;">{u.get('name', 'Anonymous')}</td>
+            <td style="padding:10px 14px;color:#475569;font-family:monospace;font-size:12px;">{u.get('email', '')}</td>
+            <td style="padding:10px 14px;text-align:center;">
+                <span style="background:{r_bg};color:{r_color};padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">{r_icon} {role_str}</span>
+            </td>
+            <td style="padding:10px 14px;color:#0f172a;">{u.get('country') or 'Global'}</td>
+            <td style="padding:10px 14px;text-align:center;">
+                <span style="background:{fa_bg};color:{fa_color};padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">{fa_label}</span>
+            </td>
+            <td style="padding:10px 14px;font-size:12px;color:#64748b;text-align:right;">{c_date}</td>
+        </tr>
+        """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mentoring-Me — User Directory Dossier</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }}
+        .container {{ max-width: 1050px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; overflow: hidden; }}
+        .header {{ background: linear-gradient(135deg, #0f172a 0%, #334155 100%); color: #ffffff; padding: 28px 32px; }}
+        .header h1 {{ margin: 0 0 6px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }}
+        .header p {{ margin: 0; color: #94a3b8; font-size: 13px; }}
+        .kpi-row {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 24px 32px 12px 32px; }}
+        .kpi-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; text-align: center; }}
+        .kpi-card .val {{ font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 2px; }}
+        .kpi-card .lbl {{ font-size: 11px; text-transform: uppercase; font-weight: 600; color: #64748b; letter-spacing: 0.5px; }}
+        .table-wrap {{ padding: 16px 32px 32px 32px; }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+        th {{ background: #0f172a; color: #ffffff; text-align: left; padding: 10px 14px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        th:first-child {{ border-top-left-radius: 6px; }}
+        th:last-child {{ border-top-right-radius: 6px; }}
+        .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 32px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; }}
+        .print-btn {{ background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; }}
+        @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; border: none; max-width: 100%; }} .no-print {{ display: none; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <h1>👥 Mentoring-Me — Registered User & Account Directory</h1>
+                    <p>Platform user demographics, authentication credentials & security audit · Generated: {now_str}</p>
+                </div>
+                <button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+            </div>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi-card"><div class="val">{total_u}</div><div class="lbl">Total Accounts</div></div>
+            <div class="kpi-card"><div class="val">{mentees}</div><div class="lbl">Mentees</div></div>
+            <div class="kpi-card"><div class="val">{mentors}</div><div class="lbl">Mentors</div></div>
+            <div class="kpi-card"><div class="val">{twofa_pct:.1f}%</div><div class="lbl">2FA Adoption</div></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th style="text-align:center;">Role</th>
+                        <th>Country</th>
+                        <th style="text-align:center;">Security</th>
+                        <th style="text-align:right;">Joined Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html if rows_html else '<tr><td colspan="6" style="padding:24px;text-align:center;color:#64748b;">No registered user accounts found.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+        <div class="footer">
+            <span>Mentoring-Me Platform · Identity & Security Governance</span>
+            <span>GDPR-Compliant Directory Export</span>
+        </div>
+    </div>
+</body>
+</html>"""
+
 @st.fragment(run_every="4s")
 def render_active_chat_stream(match_id: str, partner_name: str, current_role: str):
     messages = api_get_messages(match_id)
@@ -6085,70 +6377,94 @@ else:
             )
 
         st.markdown("")
+        sdg_summary_data = {
+            "metric": [
+                "Total Matches Generated",
+                "Accepted Mentorships",
+                "Female Mentees Count",
+                "Female Mentors Count",
+                "Female-Female Pairing Rate",
+                "D&I Ally Boost Adoption Rate",
+                "Gender Representation Boost Rate",
+                "Average Accepted Match Compatibility Score",
+                "1-on-1 Sessions Logged",
+                "Milestone Completion Rate",
+                "Export Timestamp"
+            ],
+            "value": [
+                total_matches,
+                len(accepted),
+                len(set(h['mentee_name'] for h in female_mentee)),
+                len(set(h['mentor_name'] for h in female_mentor)),
+                ff_rate,
+                ally_rate,
+                rep_rate,
+                avg_score,
+                n_total,
+                f"{m_comp_rate:.1f}%",
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            ]
+        }
+
+        # Generate Styled HTML Dossiers
+        html_matches_dossier = generate_matches_html_dossier(history)
+        html_sdg5_dossier = generate_sdg5_html_dossier(sdg_summary_data)
+        html_users_dossier = generate_user_directory_html_dossier(all_users)
+
+        st.markdown("##### 🌐 Executive HTML Dossiers (Styled & Print-to-PDF Ready)")
         exp_col1, exp_col2, exp_col3 = st.columns(3)
         with exp_col1:
             if history:
-                csv_matches = pd.DataFrame(history).to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Export Match Outcomes (CSV)",
-                    data=csv_matches,
-                    file_name=f"mentoring_me_matches_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
+                    label="🌐 Match Outcomes Dossier (.html)",
+                    data=html_matches_dossier.encode('utf-8'),
+                    file_name=f"mentoring_me_matches_dossier_{datetime.datetime.now().strftime('%Y%m%d')}.html",
+                    mime="text/html",
                     use_container_width=True
                 )
             else:
-                st.button("📥 Export Match Outcomes (CSV)", disabled=True, use_container_width=True)
+                st.button("🌐 Match Outcomes Dossier (.html)", disabled=True, use_container_width=True)
 
         with exp_col2:
-            sdg_summary_data = {
-                "metric": [
-                    "Total Matches Generated",
-                    "Accepted Mentorships",
-                    "Female Mentees Count",
-                    "Female Mentors Count",
-                    "Female-Female Pairing Rate",
-                    "D&I Ally Boost Adoption Rate",
-                    "Gender Representation Boost Rate",
-                    "Average Accepted Match Compatibility Score",
-                    "1-on-1 Sessions Logged",
-                    "Milestone Completion Rate",
-                    "Export Timestamp"
-                ],
-                "value": [
-                    total_matches,
-                    len(accepted),
-                    len(set(h['mentee_name'] for h in female_mentee)),
-                    len(set(h['mentor_name'] for h in female_mentor)),
-                    ff_rate,
-                    ally_rate,
-                    rep_rate,
-                    avg_score,
-                    n_total,
-                    f"{m_comp_rate:.1f}%",
-                    datetime.datetime.utcnow().isoformat()
-                ]
-            }
-            csv_sdg = pd.DataFrame(sdg_summary_data).to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Export SDG 5 Impact Report (CSV)",
-                data=csv_sdg,
-                file_name=f"mentoring_me_sdg5_report_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
+                label="🌟 SDG 5 Impact Dossier (.html)",
+                data=html_sdg5_dossier.encode('utf-8'),
+                file_name=f"mentoring_me_sdg5_dossier_{datetime.datetime.now().strftime('%Y%m%d')}.html",
+                mime="text/html",
                 use_container_width=True
             )
 
         with exp_col3:
             if all_users:
-                csv_users = pd.DataFrame(all_users).to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Export User Directory (CSV)",
-                    data=csv_users,
-                    file_name=f"mentoring_me_users_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
+                    label="👥 User Directory Dossier (.html)",
+                    data=html_users_dossier.encode('utf-8'),
+                    file_name=f"mentoring_me_users_dossier_{datetime.datetime.now().strftime('%Y%m%d')}.html",
+                    mime="text/html",
                     use_container_width=True
                 )
             else:
-                st.button("📥 Export User Directory (CSV)", disabled=True, use_container_width=True)
+                st.button("👥 User Directory Dossier (.html)", disabled=True, use_container_width=True)
+
+        # Raw CSV Export Fallback (Optional)
+        with st.expander("📦 Raw Spreadsheet Data Packages (CSV Fallback)", expanded=False):
+            st.caption("Download unformatted comma-separated raw data files for custom spreadsheet manipulation.")
+            raw_c1, raw_c2, raw_c3 = st.columns(3)
+            with raw_c1:
+                if history:
+                    csv_matches = pd.DataFrame(history).to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Raw Matches (CSV)", data=csv_matches, file_name=f"raw_matches_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+                else:
+                    st.button("📥 Raw Matches (CSV)", disabled=True, use_container_width=True)
+            with raw_c2:
+                csv_sdg = pd.DataFrame(sdg_summary_data).to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Raw SDG 5 (CSV)", data=csv_sdg, file_name=f"raw_sdg5_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+            with raw_c3:
+                if all_users:
+                    csv_users = pd.DataFrame(all_users).to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Raw Users (CSV)", data=csv_users, file_name=f"raw_users_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+                else:
+                    st.button("📥 Raw Users (CSV)", disabled=True, use_container_width=True)
 
         # In-App Interactive Report Previewer
         with st.expander("👁️ Preview Full Live Capstone Executive Report (Ready to Copy for Paper / Slides)", expanded=False):

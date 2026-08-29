@@ -42,17 +42,19 @@ def calculate_match_score_and_justifications(mentor_data: dict, mentee: models.M
         
     # 2. Location Match (30% weight)
     mentor_country = mentor_data.get("country", "").strip().lower()
-    pref_country = (mentee.target_mentor_country or "").strip().lower()
+    raw_pref_country = (mentee.target_mentor_country or "").strip()
+    pref_countries = [c.strip().lower() for c in raw_pref_country.replace(";", ",").split(",") if c.strip()]
     
-    if not pref_country:
+    if not pref_countries:
         location_score = 1.0
         justifications.append("🟢 **Location Match**: Matches your preference for any location.")
-    elif mentor_country and pref_country in mentor_country:
+    elif mentor_country and any(c in mentor_country or mentor_country in c for c in pref_countries):
         location_score = 1.0
-        justifications.append(f"🟢 **Preferred Location**: Nominee is located in your preferred country ({mentee.target_mentor_country}).")
+        matched_c = next((c for c in pref_countries if c in mentor_country or mentor_country in c), raw_pref_country)
+        justifications.append(f"🟢 **Preferred Location**: Nominee is located in your preferred location ({mentor_data.get('country') or matched_c.title()}).")
     else:
         location_score = 0.3
-        justifications.append(f"🟡 **Different Location**: Located in {mentor_data.get('country') or 'International'} vs your preference for {mentee.target_mentor_country}.")
+        justifications.append(f"🟡 **Different Location**: Located in {mentor_data.get('country') or 'International'} vs your preferences ({raw_pref_country}).")
         
     # 3. Experience Match (30% weight)
     mentor_years = float(mentor_data.get("years_experience", 5.0))

@@ -1410,7 +1410,8 @@ def get_matches(
                 target_boost += min(0.10, (matches_count / len(keywords)) * 0.10)
                 
         if mentee.target_mentor_country and m.country:
-            if mentee.target_mentor_country.lower().strip() == m.country.lower().strip():
+            pref_countries = [c.strip().lower() for c in mentee.target_mentor_country.replace(";", ",").split(",") if c.strip()]
+            if any(c == m.country.lower().strip() or c in m.country.lower() for c in pref_countries):
                 target_boost += 0.05
                 
         if mentee.target_mentor_min_years is not None:
@@ -2112,7 +2113,11 @@ def get_mentee_linkedin_deep_link(
         raise HTTPException(status_code=404, detail="Mentee profile not found.")
         
     target_role = role if role is not None else (mentee.target_mentor_expertise or mentee.dev_type or "")
-    target_country = country if country is not None else (mentee.target_mentor_country or mentee.country or "")
+    if country is not None:
+        target_country = country
+    else:
+        raw_c = (mentee.target_mentor_country or "").replace(";", ",").split(",")[0].strip()
+        target_country = raw_c or mentee.country or ""
     target_wit = women_in_tech if women_in_tech is not None else (mentee.gender == "Female" or mentee.prefer_diversity_ally)
     
     skill_list = [s.strip() for s in skills.split(",") if s.strip()] if skills else []

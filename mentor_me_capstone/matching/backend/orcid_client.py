@@ -139,24 +139,24 @@ def calculate_general_match(candidate: dict, mentee: models.Mentee):
     cand_iso = resolve_to_iso(cand_raw)   # handles "NG", "Nigeria", "" etc.
     cand_display = get_full_country_name(cand_raw) if cand_raw else "an unspecified location"
     
-    pref_country_raw = (mentee.target_mentor_country or "").strip()
-    pref_iso = resolve_to_iso(pref_country_raw)
-    pref_display = get_full_country_name(pref_country_raw) if pref_country_raw else None
+    raw_pref_country = (mentee.target_mentor_country or "").strip()
+    pref_countries = [c.strip() for c in raw_pref_country.replace(";", ",").split(",") if c.strip()]
+    pref_isos = [resolve_to_iso(c) for c in pref_countries if resolve_to_iso(c)]
 
-    if not pref_country_raw:
+    if not pref_countries:
         # No location preference — any country is fine
         location_score = 1.0
         justifications.append(f"🟢 **Open Location**: You have no location preference. Candidate is based in {cand_display}.")
-    elif cand_iso and pref_iso and cand_iso == pref_iso:
+    elif cand_iso and pref_isos and cand_iso in pref_isos:
         location_score = 1.0
-        justifications.append(f"🟢 **Preferred Location Match**: Candidate is based in {cand_display}, matching your preference for {pref_display}.")
+        justifications.append(f"🟢 **Preferred Location Match**: Candidate is based in {cand_display}, matching your preference for {raw_pref_country}.")
     elif not cand_iso:
         # ORCID profile has no location data — give partial credit and be transparent
         location_score = 0.5
-        justifications.append(f"🟡 **Location Unverified**: This ORCID profile does not publicly list a country. Your preference is {pref_display}.")
+        justifications.append(f"🟡 **Location Unverified**: This ORCID profile does not publicly list a country. Your preferences: {raw_pref_country}.")
     else:
         location_score = 0.3
-        justifications.append(f"🟡 **Different Location**: Candidate is based in {cand_display}, while your preference is {pref_display}.")
+        justifications.append(f"🟡 **Different Location**: Candidate is based in {cand_display}, while your preferences are: {raw_pref_country}.")
         
     # 3. Experience Match (30%)
     cand_years = float(candidate.get("years_experience", 5.0))

@@ -3022,11 +3022,16 @@ else:
 
                     col9, col10 = st.columns(2)
                     with col9:
-                        pref_country = mentee.get('target_mentor_country')
-                        target_mentor_country = st.selectbox(
-                            "Preferred Mentor Country",
-                            ["Any"] + COUNTRIES,
-                            index=0 if not pref_country or pref_country == "Any" else (COUNTRIES.index(pref_country) + 1 if pref_country in COUNTRIES else 0)
+                        raw_pref_country = mentee.get('target_mentor_country') or ""
+                        if raw_pref_country and raw_pref_country != "Any":
+                            default_countries = [c.strip() for c in raw_pref_country.replace(",", ";").split(";") if c.strip() in COUNTRIES]
+                        else:
+                            default_countries = []
+                        target_mentor_countries = st.multiselect(
+                            "Preferred Mentor Countries (Multi-select)",
+                            options=COUNTRIES,
+                            default=default_countries,
+                            help="Choose one or more countries to prioritize mentors located in those regions. Leave empty to consider all countries (worldwide)."
                         )
                     with col10:
                         target_mentor_min_years = st.number_input(
@@ -3081,7 +3086,7 @@ else:
                             "additional_details": additional_details,
                             "gender": gender if gender != "Not stated" else None,
                             "target_mentor_expertise": ", ".join(cleaned_kws),
-                            "target_mentor_country": target_mentor_country if target_mentor_country != "Any" else None,
+                            "target_mentor_country": "; ".join(target_mentor_countries) if target_mentor_countries else None,
                             "target_mentor_min_years": target_mentor_min_years,
                             "alternative_emails": alternative_emails.strip(),
                             "prefer_diversity_ally": prefer_diversity_ally,
@@ -3611,7 +3616,8 @@ else:
                         )
                     with ov_col2:
                         session_country_opts = ["Any"] + COUNTRIES
-                        session_country_default = saved_country if saved_country and saved_country in session_country_opts else "Any"
+                        saved_c_list = [c.strip() for c in saved_country.replace(",", ";").split(";") if c.strip()]
+                        session_country_default = saved_c_list[0] if saved_c_list and saved_c_list[0] in session_country_opts else "Any"
                         session_country_idx = session_country_opts.index(session_country_default) if session_country_default in session_country_opts else 0
                         session_country = st.selectbox("Preferred Country", session_country_opts, index=session_country_idx, key="outreach_session_country")
                     with ov_col3:

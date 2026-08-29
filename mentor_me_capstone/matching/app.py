@@ -4279,6 +4279,17 @@ else:
             
             with tab_match:
                 st.subheader("Dynamic Matches Recommendation")
+                
+                # Persistent feedback banner across reruns
+                if 'match_action_feedback' in st.session_state and st.session_state['match_action_feedback']:
+                    fb_type, fb_msg = st.session_state.pop('match_action_feedback')
+                    if fb_type == "success":
+                        st.success(fb_msg)
+                    elif fb_type == "info":
+                        st.info(fb_msg)
+                    elif fb_type == "error":
+                        st.error(fb_msg)
+
                 # ── Equity transparency banner ─────────────────────────────
                 if mentee.get('gender') == 'Female':
                     st.info(
@@ -4376,16 +4387,30 @@ else:
                                         st.info("CV details unavailable.")
                             if cols[1].button("📩 Request Mentorship", key=f"req_mentor_{m['id']}", type="primary"):
                                 if api_match_action(m['id'], "ACCEPT"):
-                                    st.success(f"🚀 Mentorship request sent to {m['mentor_name']}! You will be notified when they review and respond.")
-                                    if 'current_matches' in st.session_state:
-                                        del st.session_state['current_matches']
+                                    st.toast(f"🚀 Mentorship request sent to {m['mentor_name']}!", icon="✅")
+                                    st.session_state['match_action_feedback'] = (
+                                        "success",
+                                        f"🚀 **Mentorship request successfully sent to {m['mentor_name']}!**\n\n"
+                                        f"Your request has been dispatched to their dashboard and email. You can monitor the response status in your **📜 Match History** tab."
+                                    )
+                                    if 'current_matches' in st.session_state and st.session_state['current_matches']:
+                                        st.session_state['current_matches'] = [cm for cm in st.session_state['current_matches'] if cm['id'] != m['id']]
                                     st.rerun()
+                                else:
+                                    st.error(f"❌ Failed to submit mentorship request to {m['mentor_name']}. Please try again.")
                             if cols[2].button("🚫 Pass", key=f"decline_{m['id']}"):
                                 if api_match_action(m['id'], "DECLINE"):
-                                    st.info(f"Passed on proposal for {m['mentor_name']}.")
-                                    if 'current_matches' in st.session_state:
-                                        del st.session_state['current_matches']
+                                    st.toast(f"🚫 Passed on proposal for {m['mentor_name']}.", icon="ℹ️")
+                                    st.session_state['match_action_feedback'] = (
+                                        "info",
+                                        f"🚫 **Passed on proposal for {m['mentor_name']}**.\n\n"
+                                        f"This recommendation has been archived. You can click **Re-calculate / Refresh Matches** anytime to explore more mentors."
+                                    )
+                                    if 'current_matches' in st.session_state and st.session_state['current_matches']:
+                                        st.session_state['current_matches'] = [cm for cm in st.session_state['current_matches'] if cm['id'] != m['id']]
                                     st.rerun()
+                                else:
+                                    st.error(f"❌ Failed to archive proposal for {m['mentor_name']}.")
                                     
                     with st.expander("📊 View Detailed Compatibility Breakdown (Top Match)", expanded=False):
                         top = matches[0]
@@ -5626,6 +5651,15 @@ else:
             st.subheader("Incoming Requests & Active Mentoring")
             st.caption("Review incoming mentee requests requiring your response, and coordinate with your active mentees.")
 
+            if 'mentor_action_feedback' in st.session_state and st.session_state['mentor_action_feedback']:
+                m_type, m_msg = st.session_state.pop('mentor_action_feedback')
+                if m_type == "success":
+                    st.success(m_msg)
+                elif m_type == "info":
+                    st.info(m_msg)
+                elif m_type == "error":
+                    st.error(m_msg)
+
             history = sorted(api_get_match_history() or [], key=lambda h: h.get('created_at', ''), reverse=True)
 
             proposed = [h for h in history if h['status'] == 'REQUESTED']
@@ -5700,9 +5734,11 @@ else:
                             if ac1.button("✅ Accept Connection", key=f"accept_conn_{p['id']}", use_container_width=True):
                                 st.session_state[f"show_accept_dialog_{p['id']}"] = True
                                 st.session_state[f"show_decline_dialog_{p['id']}"] = False
+                                st.rerun()
                             if ac2.button("❌ Decline Connection", key=f"decline_conn_{p['id']}", use_container_width=True):
                                 st.session_state[f"show_accept_dialog_{p['id']}"] = False
                                 st.session_state[f"show_decline_dialog_{p['id']}"] = True
+                                st.rerun()
 
                             # ── Accept dialog ─────────────────────────────────
                             if st.session_state.get(f"show_accept_dialog_{p['id']}", False):
@@ -5756,7 +5792,12 @@ else:
                                 conf1, conf2 = st.columns(2)
                                 if conf1.button("✅ Confirm & Accept", key=f"confirm_accept_{p['id']}", use_container_width=True):
                                     if api_match_action(p['id'], "ACCEPT", availability_note=mentor_avails):
-                                        st.success(f"Connection with {p['mentee_name']} accepted!")
+                                        st.toast(f"✅ Connection with {p['mentee_name']} accepted!", icon="🎉")
+                                        st.session_state['mentor_action_feedback'] = (
+                                            "success",
+                                            f"🎉 **Connection with {p['mentee_name']} accepted!**\n\n"
+                                            f"Your availability has been dispatched to them. You can now chat or coordinate next steps under **Active Mentoring Partnerships** below."
+                                        )
                                         st.session_state[f"show_accept_dialog_{p['id']}"] = False
                                         st.session_state['profile'] = None
                                         st.rerun()
@@ -5772,7 +5813,11 @@ else:
                                 dec1, dec2 = st.columns(2)
                                 if dec1.button("Confirm Decline", key=f"confirm_decline_{p['id']}", use_container_width=True):
                                     if api_match_action(p['id'], "DECLINE"):
-                                        st.warning(f"Declined connection with {p['mentee_name']}.")
+                                        st.toast(f"Declined request from {p['mentee_name']}.", icon="ℹ️")
+                                        st.session_state['mentor_action_feedback'] = (
+                                            "info",
+                                            f"ℹ️ **Request from {p['mentee_name']} has been declined and archived.**"
+                                        )
                                         st.session_state[f"show_decline_dialog_{p['id']}"] = False
                                         st.session_state['profile'] = None
                                         st.rerun()

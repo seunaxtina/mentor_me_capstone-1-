@@ -1586,7 +1586,7 @@ def generate_capstone_executive_report(history, all_users, audit_logs, all_notes
     w_exp = cfg.get("w_exp", 0.25)
     w_stage = cfg.get("w_stage", 0.20)
     w_goals = cfg.get("w_goals", 0.15)
-    w_pract = cfg.get("w_practical", 0.10)
+    w_practical = cfg.get("w_practical", 0.10)
     b_ally = cfg.get("ally_boost", 0.10)
     b_rep = cfg.get("rep_boost", 0.05)
     

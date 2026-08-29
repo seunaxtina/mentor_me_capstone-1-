@@ -1257,6 +1257,49 @@ def api_get_match_history():
         st.error(f"API Connection Error: {e}")
         return []
 
+def api_get_notes(mentee_id=None):
+    if 'access_token' not in st.session_state or not st.session_state['access_token']:
+        return []
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    params = {"mentee_id": mentee_id} if mentee_id else {}
+    try:
+        response = api_http.get(f"{API_URL}/notes", headers=headers, params=params)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+def api_create_note(data):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.post(f"{API_URL}/notes", json=data, headers=headers)
+        if response.status_code == 201:
+            return True, response.json()
+        detail = response.json().get('detail', 'Failed to create note')
+        return False, detail
+    except Exception as e:
+        return False, str(e)
+
+def api_update_note(note_id, data):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.put(f"{API_URL}/notes/{note_id}", json=data, headers=headers)
+        if response.status_code == 200:
+            return True, response.json()
+        detail = response.json().get('detail', 'Failed to update note')
+        return False, detail
+    except Exception as e:
+        return False, str(e)
+
+def api_delete_note(note_id):
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.delete(f"{API_URL}/notes/{note_id}", headers=headers)
+        return response.status_code == 200
+    except Exception:
+        return False
+
 def api_upload_cv(file_bytes, filename):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     files = {"file": (filename, file_bytes, "application/pdf")}
@@ -2448,6 +2491,574 @@ def render_copilot_tab(mentee):
         st.session_state["playbook_messages"] = active_session["messages"]
         st.rerun()
 
+
+def generate_mentor_ai_completion(system_inst, user_prompt, chat_history=None):
+    if chat_history is None:
+        chat_history = []
+    gemini_env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    openai_env_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    
+    api_key = None
+    provider = "simulated"
+    if gemini_env_key:
+        api_key = gemini_env_key
+        provider = "gemini"
+    elif openai_env_key:
+        api_key = openai_env_key
+        provider = "openai"
+        
+    if provider == "openai":
+        return call_openai_api(api_key, system_inst, user_prompt, chat_history)
+    elif provider == "gemini":
+        return call_gemini_api(api_key, system_inst, user_prompt, chat_history)
+    else:
+        # High quality simulated mentoring toolkit responses
+        p_lower = user_prompt.lower()
+        if "agenda" in p_lower or "1-on-1" in p_lower:
+            return (
+                "### 📅 Structured 1-on-1 Mentoring Agenda\n\n"
+                "**Duration:** 45 Minutes | **Focus:** Alignment, Discovery & Goal Execution\n\n"
+                "---\n\n"
+                "#### ⏱️ Part 1: Check-in & Icebreaker (00:00 - 00:08)\n"
+                "- *\"What went well for you since we last spoke? What win (big or small) are you celebrating?\"*\n"
+                "- *\"On a scale of 1-5, how is your current cognitive and energy balance?\"*\n\n"
+                "#### 🔍 Part 2: Deep Dive on Core Challenge (00:08 - 00:28)\n"
+                "- Review progress on previous action items / technical project milestones.\n"
+                "- Unpack bottlenecks: *\"What is the biggest barrier preventing you from shipping this?\"*\n"
+                "- Walkthrough architectural tradeoffs and code design patterns together.\n\n"
+                "#### 💡 Part 3: Career Reflection & Strategic Insight (00:28 - 00:38)\n"
+                "- Discuss workplace dynamics, visibility, or upcoming team presentations.\n"
+                "- Practice self-advocacy framing for manager 1-on-1s.\n\n"
+                "#### 🚀 Part 4: Commitments & Action Items (00:38 - 00:45)\n"
+                "- Agree on 2-3 concrete homework action items before the next call.\n"
+                "- Confirm date/time of the next session."
+            )
+        elif "roadmap" in p_lower or "90-day" in p_lower or "plan" in p_lower:
+            return (
+                "### 🗺️ 90-Day Mentee Growth & Progression Roadmap\n\n"
+                "---\n\n"
+                "#### 🧱 Month 1: Foundation & High-Frequency Habits\n"
+                "- **Goal:** Master core codebase patterns and establish a feedback rhythm.\n"
+                "- **Milestones:**\n"
+                "  - [ ] Set up end-to-end local environment and write first comprehensive integration test.\n"
+                "  - [ ] Start a private 'Brag Sheet' / work log document.\n"
+                "  - [ ] Read 3 core architectural RFCs in your domain.\n"
+                "- **KPI:** Ship 2 non-trivial features with zero blocker PR review feedback.\n\n"
+                "#### ⚙️ Month 2: System Ownership & Architectural Thinking\n"
+                "- **Goal:** Transition from ticket-taker to feature owner.\n"
+                "- **Milestones:**\n"
+                "  - [ ] Author a 1-page mini technical design document for a proposed optimization.\n"
+                "  - [ ] Conduct a deep-dive code review for a teammate focusing on maintainability.\n"
+                "  - [ ] Identify and fix one high-friction developer experience bottleneck.\n"
+                "- **KPI:** Independently lead the deployment and monitoring of a subsystem.\n\n"
+                "#### 🌟 Month 3: Visibility, Impact & Leadership Transition\n"
+                "- **Goal:** Amplify team impact and prepare promotion evidence.\n"
+                "- **Milestones:**\n"
+                "  - [ ] Present a 15-min lunch-and-learn tech demo to the wider engineering team.\n"
+                "  - [ ] Formulate 6-month career goals with manager using evidence from brag sheet.\n"
+                "- **KPI:** Documented senior peer endorsement on technical competence."
+            )
+        elif "feedback" in p_lower or "cv" in p_lower or "resume" in p_lower:
+            return (
+                "### ✍️ Constructive Feedback & Actionable Review\n\n"
+                "**Framework:** Situation · Behavior · Impact (SBI) + Future Coaching\n\n"
+                "---\n\n"
+                "#### 🟢 Key Strengths Observed:\n"
+                "- Clear technical clarity and strong motivation to tackle ambiguous problems.\n"
+                "- Thoughtful approach to collaboration and willingness to seek early guidance.\n\n"
+                "#### 🟡 High-Leverage Growth Opportunities:\n"
+                "1. **Quantify Business & Technical Impact:** Replace passive statements (e.g. *'worked on backend API'*) with measurable results (e.g. *'architected async FastAPI microservice handling 1.2M req/day with sub-50ms p95 latency'*).\n"
+                "2. **Highlight System Ownership:** Emphasize choices made around reliability, testing, and CI/CD pipelines.\n\n"
+                "#### 🎯 Recommended Action Plan for Mentee:\n"
+                "- Refactor resume bullet points using the Google X-Y-Z formula: *'Accomplished [X], as measured by [Y], by doing [Z]'*.\n"
+                "- Schedule a 15-minute mock pitch to practice talking through technical tradeoffs."
+            )
+        elif "interview" in p_lower or "question" in p_lower:
+            return (
+                "### 🎯 Mock Interview & Scenario Question Bank\n\n"
+                "---\n\n"
+                "#### 1. System Design & Architectural Tradeoffs\n"
+                "- **Question:** *\"Walk me through how you would design a rate limiter for a public API that handles burst traffic. How would you choose between Token Bucket vs Leaky Bucket?\"*\n"
+                "- **What to listen for:** Consideration of Redis distributed locks, latency overhead, and handling race conditions.\n\n"
+                "#### 2. Debugging & High-Pressure Incident Management\n"
+                "- **Question:** *\"Describe a time when a production deployment failed or caused a latency spike. How did you triage the root cause, communicate with stakeholders, and prevent recurrence?\"*\n"
+                "- **What to listen for:** Calmness under pressure, use of logs/telemetry (datadog/grafana), and blameless post-mortem mindset.\n\n"
+                "#### 3. Navigating Disagreements & Influence\n"
+                "- **Question:** *\"Tell me about a time you strongly disagreed with a senior engineer or product manager's technical direction. How did you handle it?\"*\n"
+                "- **What to listen for:** Use of data/benchmarks over emotion, respectful disagreement, and commitment to the team once a decision is made."
+            )
+        else:
+            return (
+                f"### 💡 Mentor AI Copilot Guidance\n\n"
+                f"Regarding your query on **{user_prompt[:50]}...**:\n\n"
+                "1. **Anchor in Psychological Safety:** Ensure your mentee feels comfortable sharing struggles without fear of judgment. Normalize that senior engineers also face ambiguity and imposter syndrome.\n"
+                "2. **Ask Powerful Open Questions:** Rather than jumping immediately into problem-solving, ask *'What options have you considered so far?'* and *'What would the ideal outcome look like?'*.\n"
+                "3. **Sponsor While Mentoring:** Beyond advice, look for opportunities to mention your mentee's accomplishments in leadership circles and recommend them for high-visibility initiatives."
+            )
+
+
+def render_mentor_milestones_tab(mentor, history):
+    st.markdown("""
+        <style>
+        .milestone-header {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+            color: #ffffff;
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(49, 46, 129, 0.15);
+            border: 1px solid #4338ca;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div class="milestone-header">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 28px;">📝</span>
+                    <h3 style="margin: 0; color: white !important; font-size: 1.45rem; font-weight: 700;">Mentee Milestones & Session Notes</h3>
+                </div>
+                <span style="background: rgba(255,255,255,0.15); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Shared Growth Tracker</span>
+            </div>
+            <p style="color: #c7d2fe; margin-top: 8px; margin-bottom: 0; font-size: 0.92rem;">
+                Keep your 1-on-1 mentorship structured and high-impact. Log meeting notes, assign action items / homework, and track progress against career milestones for your paired mentees.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    connected_matches = [m for m in history if m.get('status') == 'ACCEPTED']
+    if not connected_matches:
+        st.info("👋 **No Active Mentees Yet**: Once you accept a mentorship request in the **Mentorship Requests** tab, you will be able to log meeting notes, set homework checklists, and track milestones here.")
+        return
+        
+    mentee_map = {}
+    for m in connected_matches:
+        e_id = m['mentee_id']
+        e_name = m.get('mentee_name') or f"Mentee #{e_id[:6]}"
+        e_role = (m.get('mentee_devtype') or '').split(';')[0]
+        mentee_map[e_id] = f"{e_name} ({e_role or 'Mentee'})"
+        
+    all_notes = api_get_notes()
+    
+    total_notes = len(all_notes)
+    completed_milestones = len([n for n in all_notes if n.get('milestone_status') == 'COMPLETED'])
+    in_progress = len([n for n in all_notes if n.get('milestone_status') == 'IN_PROGRESS'])
+    
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    m_col1.metric("👥 Active Mentees", len(mentee_map))
+    m_col2.metric("📝 Logged Sessions", total_notes)
+    m_col3.metric("🚀 In Progress", in_progress)
+    m_col4.metric("✅ Completed Milestones", completed_milestones)
+    
+    st.markdown("---")
+    
+    ctrl_col1, ctrl_col2 = st.columns([3, 2])
+    with ctrl_col1:
+        mentee_opts = ["ALL"] + list(mentee_map.keys())
+        selected_mentee = st.selectbox(
+            "Filter notes by Mentee:",
+            options=mentee_opts,
+            format_func=lambda x: "🌐 All Active Mentees" if x == "ALL" else mentee_map.get(x, x),
+            key="notes_mentee_filter_sel"
+        )
+    with ctrl_col2:
+        status_filter = st.selectbox(
+            "Filter by Milestone Status:",
+            options=["ALL", "IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
+            format_func=lambda s: {"ALL": "🔍 All Statuses", "IN_PROGRESS": "🚀 In Progress", "COMPLETED": "✅ Completed", "NOT_STARTED": "⏳ Not Started"}.get(s, s),
+            key="notes_status_filter_sel"
+        )
+        
+    with st.expander("➕ Log New 1-on-1 Session Note & Milestone", expanded=False):
+        st.markdown("##### ✍️ Record Session Agenda & Action Items")
+        with st.form("new_session_note_form"):
+            c_e1, c_e2 = st.columns(2)
+            with c_e1:
+                target_e_id = st.selectbox(
+                    "Target Mentee *",
+                    options=list(mentee_map.keys()),
+                    format_func=lambda x: mentee_map.get(x, x),
+                    key="new_note_mentee_sel"
+                )
+            with c_e2:
+                n_date = st.date_input("Session Date *", value=datetime.date.today(), key="new_note_date")
+                
+            n_title = st.text_input("Session / Milestone Title *", placeholder="e.g. Kickoff: 6-Month Career Goals & System Architecture", key="new_note_title")
+            
+            c_s1, c_s2 = st.columns(2)
+            with c_s1:
+                n_status = st.selectbox(
+                    "Milestone Status",
+                    options=["IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
+                    format_func=lambda s: {"IN_PROGRESS": "🚀 In Progress", "COMPLETED": "✅ Completed", "NOT_STARTED": "⏳ Not Started"}.get(s, s),
+                    key="new_note_status"
+                )
+            with c_s2:
+                n_next_meeting = st.text_input("Next Scheduled Meeting (Optional)", placeholder="e.g. 2026-09-15 15:00 UTC", key="new_note_next_meeting")
+                
+            n_topics = st.text_area(
+                "Topics Covered / Key Discussions",
+                placeholder="Summary of topics explored during this call...",
+                height=90,
+                key="new_note_topics"
+            )
+            
+            n_actions = st.text_area(
+                "Action Items & Homework Checklist",
+                value="- [ ] \n- [ ] ",
+                placeholder="- [ ] Review chapter 2 on microservices\n- [ ] Draft system architecture diagram",
+                height=100,
+                key="new_note_actions",
+                help="Use markdown '- [ ] ' for open tasks and '- [x] ' for finished tasks."
+            )
+            
+            n_takeaways = st.text_area(
+                "Feedback, Encouragement & Key Takeaways",
+                placeholder="Notes on mentee strengths, areas of growth, and specific feedback given...",
+                height=80,
+                key="new_note_takeaways"
+            )
+            
+            submit_note = st.form_submit_button("💾 Save Session Note", type="primary", use_container_width=True)
+            if submit_note:
+                if not n_title.strip():
+                    st.error("Please enter a Title for this session note.")
+                else:
+                    session_dt = datetime.datetime.combine(n_date, datetime.time(12, 0))
+                    payload = {
+                        "mentee_id": target_e_id,
+                        "title": n_title.strip(),
+                        "session_date": session_dt.isoformat(),
+                        "topics_covered": n_topics.strip() if n_topics else None,
+                        "action_items": n_actions.strip() if n_actions else None,
+                        "milestone_status": n_status,
+                        "key_takeaways": n_takeaways.strip() if n_takeaways else None,
+                        "next_meeting_date": n_next_meeting.strip() if n_next_meeting else None
+                    }
+                    success, res = api_create_note(payload)
+                    if success:
+                        st.success("Session note saved successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Error saving note: {res}")
+
+    filtered_notes = all_notes.copy()
+    if selected_mentee != "ALL":
+        filtered_notes = [n for n in filtered_notes if n.get('mentee_id') == selected_mentee]
+    if status_filter != "ALL":
+        filtered_notes = [n for n in filtered_notes if n.get('milestone_status') == status_filter]
+        
+    if not filtered_notes:
+        st.info("No session notes match your active filters.")
+        return
+        
+    st.markdown(f"#### 📜 Logged Sessions ({len(filtered_notes)})")
+    
+    for idx, note in enumerate(filtered_notes):
+        n_id = note['id']
+        st_val = note.get('milestone_status', 'IN_PROGRESS')
+        badge_style = {
+            'COMPLETED': ('#dcfce7', '#166534', '✅ Completed'),
+            'IN_PROGRESS': ('#e0e7ff', '#3730a3', '🚀 In Progress'),
+            'NOT_STARTED': ('#fef3c7', '#92400e', '⏳ Not Started')
+        }.get(st_val, ('#f1f5f9', '#475569', st_val))
+        
+        s_date_str = note.get('session_date', '')[:10]
+        
+        with st.container(border=True):
+            hdr_col1, hdr_col2 = st.columns([3, 1])
+            with hdr_col1:
+                st.markdown(f"### {note.get('title')}")
+                st.caption(f"👤 **Mentee:** `{note.get('mentee_name', 'Mentee')}` · 📅 **Date:** `{s_date_str}`")
+            with hdr_col2:
+                st.markdown(
+                    f"<div style='text-align: right; margin-top: 5px;'>"
+                    f"<span style='background-color: {badge_style[0]}; color: {badge_style[1]}; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 700;'>{badge_style[2]}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                
+            if note.get('topics_covered'):
+                st.markdown("**📖 Topics Covered:**")
+                st.markdown(note['topics_covered'])
+                
+            if note.get('action_items'):
+                st.markdown("**📋 Action Items & Homework:**")
+                st.markdown(note['action_items'])
+                
+            if note.get('key_takeaways'):
+                st.markdown("**💡 Feedback & Key Takeaways:**")
+                st.markdown(f"*{note['key_takeaways']}*")
+                
+            if note.get('next_meeting_date'):
+                st.markdown(f"📆 **Next Target Meeting:** `{note['next_meeting_date']}`")
+                
+            act_col1, act_col2, act_col3, _ = st.columns([1.5, 1.2, 1.2, 3])
+            with act_col1:
+                if st_val != "COMPLETED":
+                    if st.button("Mark Completed", key=f"mark_done_{n_id}_{idx}", type="secondary"):
+                        api_update_note(n_id, {"milestone_status": "COMPLETED"})
+                        st.rerun()
+                else:
+                    if st.button("Mark In-Progress", key=f"mark_inprog_{n_id}_{idx}", type="secondary"):
+                        api_update_note(n_id, {"milestone_status": "IN_PROGRESS"})
+                        st.rerun()
+            with act_col2:
+                if st.button("✏️ Edit", key=f"toggle_edit_note_{n_id}_{idx}"):
+                    st.session_state[f"show_edit_note_{n_id}"] = not st.session_state.get(f"show_edit_note_{n_id}", False)
+                    st.rerun()
+            with act_col3:
+                if st.button("🗑️ Delete", key=f"del_note_{n_id}_{idx}"):
+                    api_delete_note(n_id)
+                    st.rerun()
+                    
+            if st.session_state.get(f"show_edit_note_{n_id}"):
+                with st.form(f"edit_note_form_{n_id}"):
+                    e_title = st.text_input("Title", value=note.get('title', ''))
+                    e_status = st.selectbox("Status", ["IN_PROGRESS", "COMPLETED", "NOT_STARTED"], index=["IN_PROGRESS", "COMPLETED", "NOT_STARTED"].index(st_val))
+                    e_topics = st.text_area("Topics Covered", value=note.get('topics_covered') or "", height=80)
+                    e_actions = st.text_area("Action Items", value=note.get('action_items') or "", height=80)
+                    e_takeaways = st.text_area("Takeaways", value=note.get('key_takeaways') or "", height=80)
+                    e_next = st.text_input("Next Meeting", value=note.get('next_meeting_date') or "")
+                    
+                    if st.form_submit_button("💾 Save Edits"):
+                        api_update_note(n_id, {
+                            "title": e_title,
+                            "milestone_status": e_status,
+                            "topics_covered": e_topics,
+                            "action_items": e_actions,
+                            "key_takeaways": e_takeaways,
+                            "next_meeting_date": e_next
+                        })
+                        st.session_state[f"show_edit_note_{n_id}"] = False
+                        st.rerun()
+
+
+def render_mentor_toolkit_tab(mentor):
+    st.markdown("""
+        <style>
+        .toolkit-header {
+            background: linear-gradient(135deg, #3b0764 0%, #1e1b4b 100%);
+            color: #ffffff;
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(59, 7, 100, 0.18);
+            border: 1px solid #581c87;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div class="toolkit-header">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 28px;">🧠</span>
+                    <h3 style="margin: 0; color: white !important; font-size: 1.45rem; font-weight: 700;">AI Mentorship Copilot & Toolkit</h3>
+                </div>
+                <span style="background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Mentor Intelligence Suite</span>
+            </div>
+            <p style="color: #e9d5ff; margin-top: 8px; margin-bottom: 0; font-size: 0.92rem;">
+                Accelerate your coaching with AI-powered agenda generators, 90-day growth roadmaps, constructive feedback frameworks, and mock interview question banks tailored to your mentees.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    tool_choice = st.radio(
+        "Select Toolkit Generator:",
+        [
+            "📅 1-on-1 Meeting Agenda Builder",
+            "🗺️ 90-Day Mentee Growth Roadmap",
+            "✍️ Constructive Feedback & CV Reviewer",
+            "🎯 Scenario & Mock Interview Generator",
+            "💬 AI Coaching Advisor Chat"
+        ],
+        horizontal=True,
+        key="mentor_toolkit_tool_radio"
+    )
+    
+    st.markdown("---")
+    
+    system_inst_base = (
+        f"You are an expert AI Mentorship Assistant designed for senior engineering mentors, engineering managers, "
+        f"and technical leaders on the Mentoring-Me platform. You help mentors give high-impact guidance to early-career "
+        f"technologists, career transitioners, and women in tech (SDG 5 focus). Mentor Name: {mentor.get('name')}, "
+        f"Expertise: {mentor.get('dev_type')}, Experience: {mentor.get('years_code_pro')} years."
+    )
+    
+    if tool_choice == "📅 1-on-1 Meeting Agenda Builder":
+        st.subheader("📅 1-on-1 Meeting Agenda Builder")
+        st.caption("Generate a structured minute-by-minute meeting plan based on your mentee's current stage and goals.")
+        
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            agenda_type = st.selectbox(
+                "Select Meeting Framework:",
+                [
+                    "Kickoff & 6-Month Career Vision (30-45 min)",
+                    "Mid-Cycle Progress & Skill Check-in (45 min)",
+                    "Technical Architecture & Code Review (45 min)",
+                    "Promotion, Visibility & Compensation Prep (45 min)",
+                    "Crisis Triage, Burnout & Imposter Syndrome (30 min)"
+                ],
+                key="agenda_type_sel"
+            )
+        with col_a2:
+            duration_opt = st.selectbox("Session Duration:", ["30 Minutes", "45 Minutes", "60 Minutes"], key="duration_opt_sel")
+            
+        custom_focus = st.text_area(
+            "Mentee Background / Specific Focus for this Call:",
+            placeholder="e.g. Mentee is an early-career backend developer preparing to lead their first microservice migration and feeling nervous about stakeholder pushback.",
+            key="agenda_custom_focus"
+        )
+        
+        if st.button("⚡ Generate Customized Agenda", type="primary", key="gen_agenda_btn"):
+            with st.spinner("Generating meeting agenda..."):
+                prompt = (
+                    f"Create a structured {duration_opt} 1-on-1 mentorship agenda using the '{agenda_type}' framework. "
+                    f"Mentee context: {custom_focus or 'Early-career software engineer'}. Include timestamps, icebreaker, "
+                    f"open coaching questions, and action items."
+                )
+                output = generate_mentor_ai_completion(system_inst_base, prompt)
+                st.markdown(output)
+                
+    elif tool_choice == "🗺️ 90-Day Mentee Growth Roadmap":
+        st.subheader("🗺️ 90-Day Mentee Growth Roadmap Generator")
+        st.caption("Build a progressive 3-month milestone roadmap to guide your mentee from skill acquisition to high-impact execution.")
+        
+        target_role_goal = st.text_input(
+            "Mentee Target Role or Career Milestone:",
+            placeholder="e.g. Junior Backend Developer transitioning to Mid-Level Cloud Engineer with AWS & Kubernetes",
+            key="roadmap_target_goal"
+        )
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            current_skill = st.text_input("Current Level / Skills:", placeholder="e.g. Python, SQL, Git basics", key="roadmap_curr_skills")
+        with col_r2:
+            time_commitment = st.selectbox("Mentee Weekly Learning Capacity:", ["3-5 hours/week", "5-10 hours/week", "10+ hours/week"], key="roadmap_capacity")
+            
+        if st.button("⚡ Generate 90-Day Growth Roadmap", type="primary", key="gen_roadmap_btn"):
+            if not target_role_goal.strip():
+                st.warning("Please enter a Target Role or Milestone.")
+            else:
+                with st.spinner("Building 90-day progression roadmap..."):
+                    prompt = (
+                        f"Design a 90-Day Growth Roadmap for a mentee with current skills '{current_skill}' "
+                        f"aiming for '{target_role_goal}'. Capacity: {time_commitment}. Break it into Month 1 (Foundations & Habits), "
+                        f"Month 2 (System Architecture & Ownership), and Month 3 (Impact & Delivery). Include KPIs and concrete milestones."
+                    )
+                    output = generate_mentor_ai_completion(system_inst_base, prompt)
+                    st.markdown(output)
+                    
+    elif tool_choice == "✍️ Constructive Feedback & CV Reviewer":
+        st.subheader("✍️ Constructive Feedback & CV Review Assistant")
+        st.caption("Transform raw project notes or draft resumes into empowering, impactful feedback using the SBI (Situation-Behavior-Impact) framework.")
+        
+        feedback_mode = st.selectbox(
+            "Feedback Type:",
+            [
+                "CV / Resume Bullet Point Strengthening (X-Y-Z formula)",
+                "Situation-Behavior-Impact (SBI) Performance Feedback",
+                "Technical Project & Code Design Review Feedback"
+            ],
+            key="feedback_mode_sel"
+        )
+        
+        raw_draft = st.text_area(
+            "Paste Mentee's Draft Text, Resume Bullets, or Scenario:",
+            placeholder="e.g. 'I worked on the search feature for our e-commerce platform and fixed several bugs in the Django codebase.'",
+            height=120,
+            key="feedback_raw_input"
+        )
+        
+        if st.button("⚡ Generate Actionable Feedback", type="primary", key="gen_feedback_btn"):
+            if not raw_draft.strip():
+                st.warning("Please paste some text to review.")
+            else:
+                with st.spinner("Analyzing and enhancing feedback..."):
+                    prompt = (
+                        f"Review the following draft for a mentee using the '{feedback_mode}' framework. "
+                        f"Raw input: '{raw_draft}'. Provide specific strengths, high-leverage growth areas, and rewritten high-impact versions."
+                    )
+                    output = generate_mentor_ai_completion(system_inst_base, prompt)
+                    st.markdown(output)
+                    
+    elif tool_choice == "🎯 Scenario & Mock Interview Generator":
+        st.subheader("🎯 Scenario & Mock Interview Question Generator")
+        st.caption("Generate realistic technical and behavioral interview questions tailored to your mentee's target seniority.")
+        
+        col_i1, col_i2 = st.columns(2)
+        with col_i1:
+            int_domain = st.selectbox(
+                "Interview Focus Domain:",
+                [
+                    "System Design & Scalability",
+                    "Full-Stack & Backend Engineering",
+                    "DevOps, Cloud & Infrastructure",
+                    "Behavioral & Cross-Functional Influence",
+                    "Engineering Leadership & Team Dynamics"
+                ],
+                key="int_domain_sel"
+            )
+        with col_i2:
+            int_level = st.selectbox("Target Seniority:", ["Junior / Early-Career", "Mid-Level", "Senior / Lead"], key="int_level_sel")
+            
+        if st.button("⚡ Generate Mock Questions & Rubric", type="primary", key="gen_interview_btn"):
+            with st.spinner("Generating interview scenarios..."):
+                prompt = (
+                    f"Generate 5 realistic scenario-based mock interview questions for a {int_level} engineer in '{int_domain}'. "
+                    f"Include follow-up probes, what positive signals to look for, and red flags."
+                )
+                output = generate_mentor_ai_completion(system_inst_base, prompt)
+                st.markdown(output)
+                
+    elif tool_choice == "💬 AI Coaching Advisor Chat":
+        st.subheader("💬 AI Coaching Advisor for Mentors")
+        st.caption("Ask questions on navigating mentoring dynamics, delivering feedback, coaching burnout, or sponsoring underrepresented engineers.")
+        
+        if "mentor_coach_messages" not in st.session_state:
+            st.session_state["mentor_coach_messages"] = [
+                {
+                    "role": "assistant",
+                    "content": "Hello! I am your AI Coaching Advisor. How can I assist you with your mentorship sessions, coaching techniques, or mentee development plans today?"
+                }
+            ]
+            
+        m_chat_box = st.container(height=380)
+        with m_chat_box:
+            for m_msg in st.session_state["mentor_coach_messages"]:
+                with st.chat_message(m_msg["role"], avatar="🤖" if m_msg["role"] == "assistant" else "🧭"):
+                    st.markdown(m_msg["content"])
+                    
+        col_s1, col_s2 = st.columns(2)
+        m_prompt_quick = None
+        if col_s1.button("💡 How do I coach a mentee through imposter syndrome?", key="quick_q1"):
+            m_prompt_quick = "How do I coach an early-career mentee who is experiencing imposter syndrome before leading a major technical project?"
+        if col_s2.button("🌟 How do I sponsor underrepresented engineers effectively?", key="quick_q2"):
+            m_prompt_quick = "What concrete actions can I take as a mentor to actively sponsor early-career women and minorities in engineering teams?"
+            
+        mentor_input = st.chat_input("Ask a coaching or mentoring question...", key="mentor_coach_input")
+        if m_prompt_quick:
+            mentor_input = m_prompt_quick
+            
+        if mentor_input:
+            st.session_state["mentor_coach_messages"].append({"role": "user", "content": mentor_input})
+            with m_chat_box:
+                with st.chat_message("user", avatar="🧭"):
+                    st.markdown(mentor_input)
+                    
+            with st.spinner("AI Coaching Advisor analyzing..."):
+                response_txt = generate_mentor_ai_completion(
+                    system_inst_base,
+                    mentor_input,
+                    st.session_state["mentor_coach_messages"][:-1]
+                )
+            st.session_state["mentor_coach_messages"].append({"role": "assistant", "content": response_txt})
+            st.rerun()
+
+
 def display_user_avatar(name, user_id, size=80):
     pic_bytes = api_get_profile_pic(user_id)
     if pic_bytes:
@@ -3559,6 +4170,41 @@ else:
                                             st.success("Thank you for your feedback!")
                                             st.rerun()
 
+                    # ── Shared Mentorship Notes & Milestones from Mentor ─────
+                    mentee_notes = api_get_notes()
+                    if mentee_notes:
+                        st.markdown("---")
+                        st.markdown("### 📝 Shared Session Notes & Milestones from your Mentor")
+                        st.caption("Review meeting summaries, homework checklists, and next session targets recorded by your mentor.")
+                        for m_note in mentee_notes:
+                            st_val = m_note.get('milestone_status', 'IN_PROGRESS')
+                            badge_style = {
+                                'COMPLETED': ('#dcfce7', '#166534', '✅ Completed'),
+                                'IN_PROGRESS': ('#e0e7ff', '#3730a3', '🚀 In Progress'),
+                                'NOT_STARTED': ('#fef3c7', '#92400e', '⏳ Not Started')
+                            }.get(st_val, ('#f1f5f9', '#475569', st_val))
+                            
+                            with st.container(border=True):
+                                c1, c2 = st.columns([3, 1])
+                                with c1:
+                                    st.markdown(f"#### {m_note['title']}")
+                                    st.caption(f"🧭 **Mentor:** `{m_note.get('mentor_name', 'Mentor')}` · 📅 **Date:** `{m_note.get('session_date', '')[:10]}`")
+                                with c2:
+                                    st.markdown(
+                                        f"<div style='text-align: right; margin-top: 4px;'>"
+                                        f"<span style='background-color: {badge_style[0]}; color: {badge_style[1]}; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 700;'>{badge_style[2]}</span>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                if m_note.get('topics_covered'):
+                                    st.markdown(f"**📖 Topics Discussed:**\n{m_note['topics_covered']}")
+                                if m_note.get('action_items'):
+                                    st.markdown(f"**📋 Action Items & Homework:**\n{m_note['action_items']}")
+                                if m_note.get('key_takeaways'):
+                                    st.markdown(f"**💡 Mentor Feedback & Takeaways:**\n*{m_note['key_takeaways']}*")
+                                if m_note.get('next_meeting_date'):
+                                    st.markdown(f"📆 **Next Scheduled Session:** `{m_note['next_meeting_date']}`")
+
                     # ── 4. Cross-tab callout ───────────────────────────────────
                     st.markdown("---")
                     noms_check = api_get_nominations()
@@ -4272,7 +4918,15 @@ else:
             render_top_notifications_bell("MENTOR")
         
         msg_tab_label_m = f"💬 Direct Messages ({tot_unread})" if tot_unread > 0 else "💬 Direct Messages"
-        tab_setup, tab_requests, tab_messages_m, tab_history_m, tab_nominate = st.tabs(["⚙️ Profile Setup", "🎯 Mentorship Requests", msg_tab_label_m, "📜 Match History", "🤝 Nominate a Colleague"])
+        tab_setup, tab_requests, tab_milestones_m, tab_toolkit_m, tab_messages_m, tab_history_m, tab_nominate = st.tabs([
+            "⚙️ Profile Setup",
+            "🎯 Mentorship Requests",
+            "📝 Milestones & Notes",
+            "🧠 AI Mentoring Toolkit",
+            msg_tab_label_m,
+            "📜 Match History",
+            "🤝 Nominate a Colleague"
+        ])
         
         if st.session_state.get('trigger_tab_switch'):
             tgt_tab_m = st.session_state.pop('trigger_tab_switch')
@@ -4714,6 +5368,12 @@ else:
                             st.rerun()
             else:
                 st.info("No active mentorship connections yet. Once you accept incoming requests above, they will appear here.")
+
+        with tab_milestones_m:
+            render_mentor_milestones_tab(mentor, history)
+
+        with tab_toolkit_m:
+            render_mentor_toolkit_tab(mentor)
 
         with tab_messages_m:
             render_messages_page("MENTOR", profile, history)

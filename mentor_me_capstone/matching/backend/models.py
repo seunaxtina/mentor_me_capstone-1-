@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Integer, ForeignKey, DateTime
+from sqlalchemy import Column, String, Float, Boolean, Integer, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 import datetime
 import uuid
@@ -169,6 +169,23 @@ class SystemConfig(Base):
 
     key = Column(String, primary_key=True)
     value = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class MentorshipNote(Base):
+    __tablename__ = "mentorship_notes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    mentor_id = Column(String, ForeignKey("users.id"), nullable=False)
+    mentee_id = Column(String, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    session_date = Column(DateTime, default=datetime.datetime.utcnow)
+    topics_covered = Column(Text, nullable=True)
+    action_items = Column(Text, nullable=True)
+    milestone_status = Column(String, default="IN_PROGRESS")  # 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'
+    key_takeaways = Column(Text, nullable=True)
+    next_meeting_date = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 

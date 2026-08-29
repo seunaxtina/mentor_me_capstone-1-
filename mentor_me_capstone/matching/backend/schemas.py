@@ -371,3 +371,46 @@ class SecurityAuditLogResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ── Mentorship Milestones & Session Notes Schemas ───────────────────────
+class MentorshipNoteCreate(BaseModel):
+    mentee_id: str
+    title: str
+    session_date: Optional[datetime.datetime] = None
+    topics_covered: Optional[str] = None
+    action_items: Optional[str] = None
+    milestone_status: Optional[str] = "IN_PROGRESS"  # NOT_STARTED, IN_PROGRESS, COMPLETED
+    key_takeaways: Optional[str] = None
+    next_meeting_date: Optional[str] = None
+
+
+class MentorshipNoteUpdate(BaseModel):
+    title: Optional[str] = None
+    session_date: Optional[datetime.datetime] = None
+    topics_covered: Optional[str] = None
+    action_items: Optional[str] = None
+    milestone_status: Optional[str] = None
+    key_takeaways: Optional[str] = None
+    next_meeting_date: Optional[str] = None
+
+
+class MentorshipNoteResponse(BaseModel):
+    id: str
+    mentor_id: str
+    mentee_id: str
+    mentor_name: Optional[str] = None
+    mentee_name: Optional[str] = None
+    title: str
+    session_date: datetime.datetime
+    topics_covered: Optional[str] = None
+    action_items: Optional[str] = None
+    milestone_status: str
+    key_takeaways: Optional[str] = None
+    next_meeting_date: Optional[str] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+

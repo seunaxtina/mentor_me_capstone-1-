@@ -9,6 +9,7 @@ import datetime
 import os
 import sys
 import secrets
+import uuid
 import jwt
 from dotenv import load_dotenv
 
@@ -2578,4 +2579,184 @@ def send_direct_match_email(
         "message": f"Email successfully dispatched to {recipient_name} ({recipient_email})!",
         "recipient_email": recipient_email
     }
+
+
+# ── Mentorship Milestones & Session Notes Endpoints ────────────────────────
+@app.get("/api/v1/notes", response_model=list[schemas.MentorshipNoteResponse])
+def get_mentorship_notes(
+    mentee_id: Optional[str] = None,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.MentorshipNote)
+    u_role = (current_user.role or "MENTEE").upper()
+    if u_role == "MENTOR":
+        query = query.filter(models.MentorshipNote.mentor_id == current_user.id)
+        if mentee_id:
+            query = query.filter(models.MentorshipNote.mentee_id == mentee_id)
+    elif u_role == "MENTEE":
+        query = query.filter(models.MentorshipNote.mentee_id == current_user.id)
+    else:
+        if mentee_id:
+            query = query.filter(models.MentorshipNote.mentee_id == mentee_id)
+            
+    notes = query.order_by(models.MentorshipNote.session_date.desc()).all()
+    
+    resp = []
+    for n in notes:
+        mentor_user = db.query(models.User).filter(models.User.id == n.mentor_id).first()
+        mentee_user = db.query(models.User).filter(models.User.id == n.mentee_id).first()
+        mentor_prof = db.query(models.Mentor).filter(models.Mentor.id == n.mentor_id).first()
+        mentee_prof = db.query(models.Mentee).filter(models.Mentee.id == n.mentee_id).first()
+        
+        m_name = (mentor_prof.name if mentor_prof and mentor_prof.name else None) or (mentor_user.name if mentor_user else "Mentor")
+        e_name = (mentee_prof.name if mentee_prof and mentee_prof.name else None) or (mentee_user.name if mentee_user else "Mentee")
+        
+        resp.append(schemas.MentorshipNoteResponse(
+            id=n.id,
+            mentor_id=n.mentor_id,
+            mentee_id=n.mentee_id,
+            mentor_name=m_name,
+            mentee_name=e_name,
+            title=n.title,
+            session_date=n.session_date,
+            topics_covered=n.topics_covered,
+            action_items=n.action_items,
+            milestone_status=n.milestone_status,
+            key_takeaways=n.key_takeaways,
+            next_meeting_date=n.next_meeting_date,
+            created_at=n.created_at,
+            updated_at=n.updated_at
+        ))
+    return resp
+
+@app.post("/api/v1/notes", response_model=schemas.MentorshipNoteResponse, status_code=201)
+def create_mentorship_note(
+    note_in: schemas.MentorshipNoteCreate,
+    current_user: models.User = Depends(auth.require_role(["MENTOR", "ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    mentee = db.query(models.User).filter(models.User.id == note_in.mentee_id).first()
+    if not mentee:
+        raise HTTPException(status_code=404, detail="Target Mentee not found.")
+        
+    session_dt = note_in.session_date or datetime.datetime.utcnow()
+    
+    new_note = models.MentorshipNote(
+        id=str(uuid.uuid4()),
+        mentor_id=current_user.id,
+        mentee_id=note_in.mentee_id,
+        title=note_in.title.strip(),
+        session_date=session_dt,
+        topics_covered=note_in.topics_covered,
+        action_items=note_in.action_items,
+        milestone_status=note_in.milestone_status or "IN_PROGRESS",
+        key_takeaways=note_in.key_takeaways,
+        next_meeting_date=note_in.next_meeting_date,
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
+    
+    mentor_prof = db.query(models.Mentor).filter(models.Mentor.id == new_note.mentor_id).first()
+    mentee_prof = db.query(models.Mentee).filter(models.Mentee.id == new_note.mentee_id).first()
+    m_name = (mentor_prof.name if mentor_prof and mentor_prof.name else None) or current_user.name or "Mentor"
+    e_name = (mentee_prof.name if mentee_prof and mentee_prof.name else None) or mentee.name or "Mentee"
+    
+    return schemas.MentorshipNoteResponse(
+        id=new_note.id,
+        mentor_id=new_note.mentor_id,
+        mentee_id=new_note.mentee_id,
+        mentor_name=m_name,
+        mentee_name=e_name,
+        title=new_note.title,
+        session_date=new_note.session_date,
+        topics_covered=new_note.topics_covered,
+        action_items=new_note.action_items,
+        milestone_status=new_note.milestone_status,
+        key_takeaways=new_note.key_takeaways,
+        next_meeting_date=new_note.next_meeting_date,
+        created_at=new_note.created_at,
+        updated_at=new_note.updated_at
+    )
+
+@app.put("/api/v1/notes/{note_id}", response_model=schemas.MentorshipNoteResponse)
+def update_mentorship_note(
+    note_id: str,
+    note_update: schemas.MentorshipNoteUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    note = db.query(models.MentorshipNote).filter(models.MentorshipNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Mentorship note not found.")
+        
+    u_role = (current_user.role or "MENTEE").upper()
+    if u_role != "ADMIN" and note.mentor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to edit this session note.")
+        
+    if note_update.title is not None:
+        note.title = note_update.title.strip()
+    if note_update.session_date is not None:
+        note.session_date = note_update.session_date
+    if note_update.topics_covered is not None:
+        note.topics_covered = note_update.topics_covered
+    if note_update.action_items is not None:
+        note.action_items = note_update.action_items
+    if note_update.milestone_status is not None:
+        note.milestone_status = note_update.milestone_status
+    if note_update.key_takeaways is not None:
+        note.key_takeaways = note_update.key_takeaways
+    if note_update.next_meeting_date is not None:
+        note.next_meeting_date = note_update.next_meeting_date
+        
+    note.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(note)
+    
+    mentor_user = db.query(models.User).filter(models.User.id == note.mentor_id).first()
+    mentee_user = db.query(models.User).filter(models.User.id == note.mentee_id).first()
+    mentor_prof = db.query(models.Mentor).filter(models.Mentor.id == note.mentor_id).first()
+    mentee_prof = db.query(models.Mentee).filter(models.Mentee.id == note.mentee_id).first()
+    
+    m_name = (mentor_prof.name if mentor_prof and mentor_prof.name else None) or (mentor_user.name if mentor_user else "Mentor")
+    e_name = (mentee_prof.name if mentee_prof and mentee_prof.name else None) or (mentee_user.name if mentee_user else "Mentee")
+    
+    return schemas.MentorshipNoteResponse(
+        id=note.id,
+        mentor_id=note.mentor_id,
+        mentee_id=note.mentee_id,
+        mentor_name=m_name,
+        mentee_name=e_name,
+        title=note.title,
+        session_date=note.session_date,
+        topics_covered=note.topics_covered,
+        action_items=note.action_items,
+        milestone_status=note.milestone_status,
+        key_takeaways=note.key_takeaways,
+        next_meeting_date=note.next_meeting_date,
+        created_at=note.created_at,
+        updated_at=note.updated_at
+    )
+
+@app.delete("/api/v1/notes/{note_id}")
+def delete_mentorship_note(
+    note_id: str,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    note = db.query(models.MentorshipNote).filter(models.MentorshipNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Mentorship note not found.")
+        
+    u_role = (current_user.role or "MENTEE").upper()
+    if u_role != "ADMIN" and note.mentor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to delete this note.")
+        
+    db.delete(note)
+    db.commit()
+    return {"status": "success", "message": "Mentorship note deleted successfully."}
+
 

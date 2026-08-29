@@ -1510,6 +1510,81 @@ def get_matches(
         
     return top_matches
 
+def parse_and_format_availability(availability_note: str, mentor_name: str = "Your mentor") -> tuple[str, str]:
+    """
+    Parses serialized availability_note (e.g. UTC_DTS:...|NOTE:...) into clean,
+    human-readable Plain-Text and Rich HTML email snippets.
+    """
+    if not availability_note or not str(availability_note).strip():
+        return "", ""
+    note_str = str(availability_note).strip()
+    slots = []
+    custom_note = ""
+
+    if note_str.startswith("UTC_DTS:"):
+        parts = note_str[8:].split("|")
+        dts_part = parts[0]
+        custom_note = parts[1][5:].strip() if len(parts) > 1 and parts[1].startswith("NOTE:") else ""
+        utc_ranges = [r.strip() for r in dts_part.split(",") if r.strip()]
+        for r in utc_ranges:
+            if "/" in r:
+                s_str, e_str = r.split("/", 1)
+                try:
+                    s_dt = datetime.datetime.fromisoformat(s_str.strip())
+                    e_dt = datetime.datetime.fromisoformat(e_str.strip())
+                    day_str = s_dt.strftime("%A, %d %b %Y")
+                    time_str = f"{s_dt.strftime('%H:%M')} - {e_dt.strftime('%H:%M')} UTC"
+                    slots.append({"day": day_str, "time": time_str, "display": f"{day_str} | {time_str}"})
+                except Exception:
+                    slots.append({"day": "Proposed Slot", "time": r, "display": r})
+            else:
+                slots.append({"day": "Proposed Slot", "time": r, "display": r})
+    else:
+        custom_note = note_str
+
+    # Plain text block
+    plain_lines = []
+    if slots or custom_note:
+        plain_lines.append("--------------------------------------------------")
+        if slots:
+            plain_lines.append("PROPOSED 1-ON-1 AVAILABILITY SLOTS:")
+            for s_idx, s in enumerate(slots):
+                plain_lines.append(f"  * Slot {s_idx + 1}: {s['display']}")
+        if custom_note:
+            if slots:
+                plain_lines.append("")
+            plain_lines.append(f"Note from {mentor_name}:")
+            plain_lines.append(f'   "{custom_note}"')
+        plain_lines.append("--------------------------------------------------")
+    plain_text_block = "\n".join(plain_lines)
+
+    # HTML block
+    html_lines = []
+    if slots or custom_note:
+        html_lines.append('<div style="margin: 20px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px;">')
+        if slots:
+            html_lines.append('<div style="font-weight: 700; color: #1e293b; font-size: 14px; margin-bottom: 12px;">📅 Proposed 1-on-1 Availability Slots:</div>')
+            html_lines.append('<div style="margin-bottom: 14px;">')
+            for s in slots:
+                html_lines.append(
+                    f'<div style="background: #ffffff; border-left: 4px solid #4A90E2; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">'
+                    f'<span style="font-weight: 600; color: #1e293b; font-size: 13px;">{s["day"]}</span><br/>'
+                    f'<span style="color: #64748b; font-size: 12px;">🕒 {s["time"]}</span>'
+                    f'</div>'
+                )
+            html_lines.append('</div>')
+        if custom_note:
+            html_lines.append(
+                f'<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-top: 10px;">'
+                f'<div style="font-size: 11px; font-weight: 700; color: #1e40af; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">💬 Note from {mentor_name}:</div>'
+                f'<div style="color: #334155; font-size: 13px; font-style: italic; line-height: 1.5;">"{custom_note}"</div>'
+                f'</div>'
+            )
+        html_lines.append('</div>')
+    html_block = "\n".join(html_lines)
+
+    return plain_text_block, html_block
+
 @app.post("/api/v1/matches/action", response_model=schemas.MatchResponse)
 def match_action(action_in: schemas.MatchAction, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
     match = db.query(models.Match).filter(models.Match.id == action_in.match_id).first()
@@ -1547,33 +1622,108 @@ def match_action(action_in: schemas.MatchAction, current_user: models.User = Dep
     base_url = (os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or "http://localhost:8501").rstrip("/")
     if match.status == "REQUESTED" and mentor_user and mentor_user.email:
         mentee_display = mentee_prof.name if mentee_prof and mentee_prof.name else "A mentee"
+        mentor_display = mentor_prof.name if mentor_prof and mentor_prof.name else ""
+        dev_type_str = mentee_prof.dev_type if mentee_prof and mentee_prof.dev_type else "Software Engineering"
+        score_pct = int(match.total_score * 100)
+        
+        req_body_text = (
+            f"Hello {mentor_display},\n\n"
+            f"{mentee_display} has requested you as a mentor on Mentoring-Me!\n\n"
+            f"Role/Specialization: {dev_type_str}\n"
+            f"Compatibility Score: {score_pct}%\n\n"
+            f"Review and respond to this request directly on your Mentor Dashboard:\n"
+            f"{base_url}\n\n"
+            f"Best regards,\nThe Mentoring-Me Team"
+        )
+        req_body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"/></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px;">
+            <div style="max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+                <div style="background: linear-gradient(135deg, #4A90E2 0%, #1e40af 100%); padding: 24px; text-align: center; color: white;">
+                    <h1 style="margin: 0; font-size: 20px; font-weight: 700;">Mentoring-Me</h1>
+                    <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Connecting Women & Allies in Technology</p>
+                </div>
+                <div style="padding: 28px 24px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">🌟 New Mentorship Request</div>
+                    <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-top: 0;">
+                        Hello <strong>{mentor_display or 'Mentor'}</strong>,<br/>
+                        <strong>{mentee_display}</strong> has requested to connect with you as their mentor!
+                    </p>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin: 18px 0;">
+                        <div style="font-size: 13px; color: #64748b; margin-bottom: 4px;">Role / Focus: <strong style="color: #1e293b;">{dev_type_str}</strong></div>
+                        <div style="font-size: 13px; color: #64748b;">Compatibility Score: <strong style="color: #2563eb;">{score_pct}%</strong></div>
+                    </div>
+                    <div style="text-align: center; margin: 28px 0 16px;">
+                        <a href="{base_url}" style="background-color: #2563eb; color: #ffffff; padding: 12px 28px; font-weight: 600; font-size: 14px; text-decoration: none; border-radius: 8px; display: inline-block;">🚀 Review on Mentor Dashboard</a>
+                    </div>
+                </div>
+                <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 24px; text-align: center; color: #94a3b8; font-size: 11px;">
+                    Mentoring-Me Platform · UN SDG 5 Gender Equality in Tech
+                </div>
+            </div>
+        </body>
+        </html>
+        """
         auth.send_email_notification(
             to_email=mentor_user.email,
             subject=f"New Mentorship Request from {mentee_display} - Mentoring-Me",
-            body_text=(
-                f"Hello {mentor_prof.name if mentor_prof else ''},\n\n"
-                f"{mentee_display} has requested you as a mentor on Mentoring-Me!\n\n"
-                f"Role/Specialization: {mentee_prof.dev_type if mentee_prof else 'Software Engineering'}\n"
-                f"Compatibility Score: {int(match.total_score * 100)}%\n\n"
-                f"Review and respond to this request directly on your Mentor Dashboard:\n"
-                f"{base_url}\n\n"
-                f"Best regards,\nThe Mentoring-Me Team"
-            )
+            body_text=req_body_text,
+            body_html=req_body_html
         )
     elif match.status == "ACCEPTED" and mentee_user and mentee_user.email:
         mentor_display = mentor_prof.name if mentor_prof and mentor_prof.name else "Your mentor"
-        note_text = f"\nMentor Availability Note: \"{match.availability_note}\"\n" if match.availability_note else ""
+        mentee_display = mentee_prof.name if mentee_prof and mentee_prof.name else "there"
+        
+        plain_avail, html_avail = parse_and_format_availability(match.availability_note, mentor_display)
+        
+        acc_body_text = (
+            f"Hello {mentee_display},\n\n"
+            f"Great news! {mentor_display} has accepted your mentorship request on Mentoring-Me! 🎉\n\n"
+            f"{plain_avail}\n\n" if plain_avail else ""
+            f"You can now chat directly in-app, select your preferred slot, and book your first session:\n"
+            f"{base_url}\n\n"
+            f"Best regards,\nThe Mentoring-Me Team"
+        )
+        
+        acc_body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"/></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px;">
+            <div style="max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+                <div style="background: linear-gradient(135deg, #4A90E2 0%, #1e40af 100%); padding: 24px; text-align: center; color: white;">
+                    <h1 style="margin: 0; font-size: 20px; font-weight: 700;">Mentoring-Me</h1>
+                    <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Connecting Women & Allies in Technology</p>
+                </div>
+                <div style="padding: 28px 24px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">🎉 Mentorship Request Accepted!</div>
+                    <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-top: 0;">
+                        Hello <strong>{mentee_display}</strong>,<br/>
+                        Great news! <strong>{mentor_display}</strong> has accepted your mentorship connection on Mentoring-Me.
+                    </p>
+                    {html_avail}
+                    <div style="text-align: center; margin: 28px 0 16px;">
+                        <a href="{base_url}" style="background-color: #2563eb; color: #ffffff; padding: 12px 28px; font-weight: 600; font-size: 14px; text-decoration: none; border-radius: 8px; display: inline-block;">🚀 Open Dashboard & Confirm Session</a>
+                    </div>
+                    <p style="color: #64748b; font-size: 12px; line-height: 1.5; text-align: center; margin-top: 20px;">
+                        You can now chat in-app, share discussion topics, and track your milestone roadmap directly on your dashboard.
+                    </p>
+                </div>
+                <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 24px; text-align: center; color: #94a3b8; font-size: 11px;">
+                    Mentoring-Me Platform · UN SDG 5 Gender Equality in Tech
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
         auth.send_email_notification(
             to_email=mentee_user.email,
             subject=f"Mentorship Request Accepted by {mentor_display}! 🎉 - Mentoring-Me",
-            body_text=(
-                f"Hello {mentee_prof.name if mentee_prof else ''},\n\n"
-                f"Great news! {mentor_display} has accepted your mentorship request on Mentoring-Me! 🎉\n"
-                f"{note_text}\n"
-                f"You can now chat directly in-app, exchange contact info, and book your first session:\n"
-                f"{base_url}\n\n"
-                f"Best regards,\nThe Mentoring-Me Team"
-            )
+            body_text=acc_body_text,
+            body_html=acc_body_html
         )
     
     return schemas.MatchResponse(

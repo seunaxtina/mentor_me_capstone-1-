@@ -3451,9 +3451,9 @@ else:
                     f"   - Align on preparation for our first deep-dive discussion (Module 1: Career Progression).\n\n"
                     f"Looking forward to connecting!"
                 )
-                st.markdown("**Copy / Edit Calendar Event Details:**")
-                st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{f_match_id}_{sel_slot}", label_visibility="collapsed")
-                st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
+                with st.expander("📋 View / Copy Raw Agenda Text (For Zoom, Teams, or Outlook)", expanded=False):
+                    st.caption("💡 **Tip**: The 1-Click **📅 Google Calendar** and **📥 .ICS Invite** buttons below automatically include this full agenda for you. Expand this section only if you need to manually copy the text into Zoom, Microsoft Teams, or custom calendar invites.")
+                    st.text_area("Calendar Event Details", value=calendar_body, height=180, key=f"edit_cal_details_{f_match_id}_{sel_slot}", label_visibility="collapsed")
                 
                 st.markdown("### ✉️ Introductory Message to Mentor")
                 st.caption("Personalize this message before sending it via In-App Chat or Email:")
@@ -3472,10 +3472,26 @@ else:
                 )
                 coordinate_subject = f"Scheduling: Mentoring-Me Intro Call — {mentee['name']} & {f_match['mentor_name']}"
 
-                st.markdown("**Choose Your Communication Channel:**")
-                coord_col1, coord_col2 = st.columns(2)
+                # Google Calendar and ICS generators for Focus Mode
+                f_gcal_url = generate_google_calendar_url(
+                    title=title_val,
+                    description=calendar_body,
+                    location="Virtual (Mentoring-Me Platform)",
+                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                )
+                f_ics_bytes = generate_ics_calendar_file(
+                    title=title_val,
+                    description=calendar_body,
+                    location="Virtual (Mentoring-Me Platform)",
+                    start_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14),
+                    end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
+                )
+
+                st.markdown("**Choose Your Communication Channel & Calendar Sync:**")
+                coord_col1, coord_col2, coord_col3, coord_col4 = st.columns(4)
                 with coord_col1:
-                    if st.button("🚀 Send Note & Open Messages Hub", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
+                    if st.button("🚀 Send Note & Open Chat", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
                         ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
                         if ok_s:
                             api_mark_match_notified(f_match_id)
@@ -3487,12 +3503,23 @@ else:
                         else:
                             st.error(res_s)
                 with coord_col2:
-                    if st.button(f"✉️ Send Email to {f_match['mentor_name']}", key=f"focus_send_email_{f_match_id}", use_container_width=True):
+                    if st.button(f"✉️ Send Email", key=f"focus_send_email_{f_match_id}", use_container_width=True):
                         ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, edited_intro_msg)
                         if ok_e:
                             st.success(f"✅ {msg_e}")
                         else:
                             st.error(msg_e)
+                with coord_col3:
+                    st.link_button("📅 Google Calendar", f_gcal_url, use_container_width=True)
+                with coord_col4:
+                    st.download_button(
+                        "📥 .ICS Invite",
+                        data=f_ics_bytes,
+                        file_name=f"mentor_me_sync_{f_match['mentor_name'].replace(' ', '_')}.ics",
+                        mime="text/calendar",
+                        use_container_width=True,
+                        key=f"download_ics_focus_{f_match_id}"
+                    )
                 
                 if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
                     api_mark_match_notified(f_match_id)
@@ -4042,9 +4069,9 @@ else:
                                         f"   - Align on preparation for our first deep-dive discussion (Module 1: Career Progression).\n\n"
                                         f"Looking forward to connecting!"
                                     )
-                                    st.markdown("**Copy / Edit Calendar Event Details:**")
-                                    st.text_area("Calendar Event Details", value=calendar_body, height=220, key=f"edit_cal_details_{h['id']}_{sel_slot}", label_visibility="collapsed")
-                                    st.info("💡 **Tip**: Copy the details above and paste them directly into your Google Calendar or Outlook invite description.")
+                                    with st.expander("📋 View / Copy Raw Agenda Text (For Zoom, Teams, or Outlook)", expanded=False):
+                                        st.caption("💡 **Tip**: The 1-Click **📅 Google Calendar** and **📥 .ICS Invite** buttons below automatically include this full agenda for you. Expand this section only if you need to manually copy the text into Zoom, Microsoft Teams, or custom calendar invites.")
+                                        st.text_area("Calendar Event Details", value=calendar_body, height=180, key=f"edit_cal_details_{h['id']}_{sel_slot}", label_visibility="collapsed")
                                     
                                     st.markdown("### ✉️ Introductory Message to Mentor")
                                     st.caption("Personalize this message before sending it via In-App Chat or Email:")

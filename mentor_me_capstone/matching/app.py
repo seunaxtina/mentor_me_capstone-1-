@@ -3006,15 +3006,19 @@ else:
                     )
 
                 # ── Section 2: Mentor Search Preferences ──────────────────
-                with st.expander("🎯 Mentor Search Preferences", expanded=True):
-                    st.caption("These preferences drive both your **platform match ranking** and the **Outreach Hub** external directory search.")
+                with st.expander("🎯 Mentor Search Preferences & Match Boosting", expanded=True):
+                    st.caption("These preferences directly drive your **platform match ranking** and power targeted discovery across the **Outreach Hub**.")
+
+                    st.info(
+                        "💡 **Mandatory Expertise Requirement (Min. 3 Skills)**: Specifying at least 3 distinct technical or domain expertises (e.g. *FastAPI, Cloud Architecture, DevOps*) directly unlocks up to a **+10% algorithmic compatibility bonus** on the platform and optimizes your external candidate discovery across the **Outreach Hub (GitHub, ORCID & LinkedIn)**."
+                    )
 
                     target_mentor_expertise = st.text_input(
-                        "Preferred Mentor Expertise Keywords",
+                        "Preferred Mentor Expertise Keywords * (Minimum 3 required)",
                         value=mentee.get('target_mentor_expertise') or "",
-                        placeholder="e.g. FastAPI, DevOps, Cloud Architecture, Finance"
+                        placeholder="e.g. FastAPI, DevOps, Cloud Architecture"
                     )
-                    st.caption("Comma-separated keywords describing the skills and domain you want your mentor to have.")
+                    st.caption("Enter at least 3 comma-separated or semicolon-separated skills/technologies you want your mentor to specialize in.")
 
                     col9, col10 = st.columns(2)
                     with col9:
@@ -3049,40 +3053,50 @@ else:
                 # ── Save Button ────────────────────────────────────────────
                 save = st.form_submit_button("💾 Save Changes", use_container_width=True)
                 if save:
-                    combined_roles = picked_roles.copy()
-                    if custom_roles.strip():
-                        for r in custom_roles.split(";"):
-                            r_clean = r.strip()
-                            if r_clean and r_clean not in combined_roles:
-                                combined_roles.append(r_clean)
-
-                    updated_data = {
-                        "name": name,
-                        "country": country,
-                        "ed_level": ed_level,
-                        "dev_type": ";".join(combined_roles),
-                        "years_code_pro": years,
-                        "job_factors": ";".join(picked_factors),
-                        "org_size": org_size,
-                        "additional_details": additional_details,
-                        "gender": gender if gender != "Not stated" else None,
-                        "target_mentor_expertise": target_mentor_expertise.strip(),
-                        "target_mentor_country": target_mentor_country if target_mentor_country != "Any" else None,
-                        "target_mentor_min_years": target_mentor_min_years,
-                        "alternative_emails": alternative_emails.strip(),
-                        "prefer_diversity_ally": prefer_diversity_ally,
-                        "timezone": timezone,
-                        "linkedin_link": linkedin_link.strip() if linkedin_link else None
-                    }
-                    success, msg = api_update_profile(updated_data)
-                    if success:
-                        if cv_file is not None:
-                            api_upload_cv(cv_file.getvalue(), cv_file.name)
-                        st.session_state['profile'] = None
-                        st.session_state['profile_save_success'] = msg
-                        st.rerun()
+                    # Validate at least 3 preferred mentor expertise keywords
+                    raw_kws = target_mentor_expertise.replace(";", ",").split(",")
+                    cleaned_kws = [k.strip() for k in raw_kws if k.strip()]
+                    if len(cleaned_kws) < 3:
+                        st.error(
+                            "⚠️ **Preferred Mentor Expertise is mandatory (minimum 3 required)**. "
+                            "Please enter at least 3 skills/expertises separated by commas (e.g. *FastAPI, DevOps, Cloud Architecture*) "
+                            "to boost your platform match ranking and enable Outreach Hub search."
+                        )
                     else:
-                        st.error(msg)
+                        combined_roles = picked_roles.copy()
+                        if custom_roles.strip():
+                            for r in custom_roles.split(";"):
+                                r_clean = r.strip()
+                                if r_clean and r_clean not in combined_roles:
+                                    combined_roles.append(r_clean)
+
+                        updated_data = {
+                            "name": name,
+                            "country": country,
+                            "ed_level": ed_level,
+                            "dev_type": ";".join(combined_roles),
+                            "years_code_pro": years,
+                            "job_factors": ";".join(picked_factors),
+                            "org_size": org_size,
+                            "additional_details": additional_details,
+                            "gender": gender if gender != "Not stated" else None,
+                            "target_mentor_expertise": ", ".join(cleaned_kws),
+                            "target_mentor_country": target_mentor_country if target_mentor_country != "Any" else None,
+                            "target_mentor_min_years": target_mentor_min_years,
+                            "alternative_emails": alternative_emails.strip(),
+                            "prefer_diversity_ally": prefer_diversity_ally,
+                            "timezone": timezone,
+                            "linkedin_link": linkedin_link.strip() if linkedin_link else None
+                        }
+                        success, msg = api_update_profile(updated_data)
+                        if success:
+                            if cv_file is not None:
+                                api_upload_cv(cv_file.getvalue(), cv_file.name)
+                            st.session_state['profile'] = None
+                            st.session_state['profile_save_success'] = msg
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
             st.markdown("---")
             with st.expander("🔐 Account Security & Double Authentication", expanded=False):

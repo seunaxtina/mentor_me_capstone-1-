@@ -72,6 +72,7 @@ def test_freestyle_matching():
         "years_code_pro": 1.0,
         "job_factors": "Remote work options;Opportunities for professional development",
         "org_size": "100 to 499 employees",
+        "target_mentor_expertise": "AWS, Docker, Kubernetes",
         "additional_details": "Looking for guidance in AWS cloud services, Docker containerization, and learning Kubernetes."
     })
     assert response.status_code in [201, 400], f"FAIL: Mentee registration failed: {response.text}"
@@ -84,7 +85,7 @@ def test_freestyle_matching():
 
     # 3. Fetch Matches for the Mentee
     print("\n3. Querying match recommendations for Cloud Mentee Sarah...")
-    response = client.get(f"{API_URL}/matches?limit=10", headers=mentee_headers)
+    response = client.get(f"{API_URL}/matches?limit=100", headers=mentee_headers)
     assert response.status_code == 200, f"FAIL: Matching request failed: {response.text}"
     matches = response.json()
     print(f"Found {len(matches)} match recommendations.")

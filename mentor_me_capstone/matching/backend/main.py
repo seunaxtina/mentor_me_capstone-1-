@@ -1154,6 +1154,17 @@ def update_profile(
         if not mentee:
             mentee = ensure_user_profile(current_user, "MENTEE", db)
         
+        # Validate at least 3 preferred mentor expertise keywords if updating search preferences
+        if "target_mentor_expertise" in profile_updates and profile_updates["target_mentor_expertise"]:
+            raw_kws = str(profile_updates["target_mentor_expertise"]).replace(";", ",").split(",")
+            cleaned_kws = [k.strip() for k in raw_kws if k.strip()]
+            if len(cleaned_kws) < 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please provide at least 3 preferred mentor expertise keywords separated by commas (e.g. FastAPI, DevOps, Cloud Architecture)."
+                )
+            profile_updates["target_mentor_expertise"] = ", ".join(cleaned_kws)
+
         # Valid fields to update
         for field in ['name', 'country', 'ed_level', 'dev_type', 'years_code_pro', 'job_factors', 'org_size', 'additional_details', 'cv_path', 'profile_pic', 'gender', 'target_mentor_expertise', 'target_mentor_country', 'target_mentor_min_years', 'alternative_emails', 'prefer_diversity_ally', 'timezone', 'linkedin_link']:
             if field in profile_updates:
@@ -1209,7 +1220,8 @@ def freestyle_match_score(mentee_text: str, mentor_text: str, mentor_devtype: st
         "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here", 
         "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", 
         "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", 
-        "than", "too", "very", "can", "will", "just", "should", "now", "like", "want", "looking"
+        "than", "too", "very", "can", "will", "just", "should", "now", "like", "want", "looking",
+        "guidance", "learning", "help", "interested", "experience", "work", "seeking"
     }
     
     def get_keywords(text):
@@ -1229,9 +1241,13 @@ def freestyle_match_score(mentee_text: str, mentor_text: str, mentor_devtype: st
     if not mentor_words:
         return 0.3
         
-    intersection = len(mentee_words & mentor_words)
-    union = len(mentee_words | mentor_words)
-    return intersection / union if union > 0 else 0.3
+    matches_count = 0
+    for mw in mentee_words:
+        if mw in mentor_words or any(mw in w or w in mw for w in mentor_words if len(w) >= 4 and len(mw) >= 4):
+            matches_count += 1
+            
+    coverage = matches_count / len(mentee_words) if mentee_words else 0.3
+    return min(1.0, round(coverage, 3))
 
 @app.get("/api/v1/matches", response_model=list[schemas.MatchResponse])
 def get_matches(

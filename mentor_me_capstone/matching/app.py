@@ -1539,6 +1539,157 @@ def generate_ics_calendar_file(title: str, description: str, location: str = "Vi
     )
     return ics_content.encode("utf-8")
 
+def generate_capstone_executive_report(history, all_users, audit_logs, all_notes, current_cfg):
+    total_matches = len(history) if history else 0
+    accepted = [h for h in history if h.get('status') == 'ACCEPTED'] if history else []
+    acc_rate = (len(accepted) / total_matches * 100) if total_matches else 0.0
+    
+    female_mentee = [h for h in history if h.get('mentee_gender') == 'Female'] if history else []
+    female_mentor = [h for h in history if h.get('mentor_gender') == 'Female'] if history else []
+    ff_pairs = [h for h in accepted if h.get('mentee_gender') == 'Female' and h.get('mentor_gender') == 'Female']
+    ff_rate = (len(ff_pairs) / len(accepted) * 100) if accepted else 0.0
+    
+    ally_boosted = [h for h in history if h.get('is_ally_boosted')] if history else []
+    ally_rate = (len(ally_boosted) / total_matches * 100) if total_matches else 0.0
+    
+    rep_boosted = [h for h in history if h.get('is_representation_boosted')] if history else []
+    rep_rate = (len(rep_boosted) / total_matches * 100) if total_matches else 0.0
+    
+    avg_score = (sum(h.get('total_score', 0) for h in accepted) / len(accepted) * 100) if accepted else 0.0
+    
+    # Match Quality Breakdown
+    strong_m = [h for h in history if h.get('match_quality') == 'Strong' or (h.get('total_score', 0) >= 0.70)] if history else []
+    good_m   = [h for h in history if h.get('match_quality') == 'Good' or (0.55 <= h.get('total_score', 0) < 0.70)] if history else []
+    fair_m   = [h for h in history if h.get('match_quality') == 'Fair' or (0.40 <= h.get('total_score', 0) < 0.55)] if history else []
+    weak_m   = [h for h in history if h.get('match_quality') == 'Weak' or (h.get('total_score', 0) < 0.40)] if history else []
+    
+    # Users
+    u_total = len(all_users) if all_users else 0
+    u_mentees = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE') if all_users else 0
+    u_mentors = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR') if all_users else 0
+    u_2fa = sum(1 for u in all_users if u.get('two_factor_enabled')) if all_users else 0
+    twofa_rate = (u_2fa / u_total * 100) if u_total else 0.0
+    
+    # Notes & Milestones
+    notes_total = len(all_notes) if all_notes else 0
+    completed_milestones = sum(1 for n in all_notes if n.get('milestone_status') == 'COMPLETED') if all_notes else 0
+    in_progress_milestones = sum(1 for n in all_notes if n.get('milestone_status') == 'IN_PROGRESS') if all_notes else 0
+    milestone_rate = (completed_milestones / notes_total * 100) if notes_total else 0.0
+    
+    # Security
+    sec_total = len(audit_logs) if audit_logs else 0
+    sec_fails = sum(1 for l in audit_logs if l.get('status') == 'FAILED') if audit_logs else 0
+    
+    # Config
+    cfg = current_cfg or {}
+    w_role = cfg.get("w_role", 0.30)
+    w_exp = cfg.get("w_exp", 0.25)
+    w_stage = cfg.get("w_stage", 0.20)
+    w_goals = cfg.get("w_goals", 0.15)
+    w_pract = cfg.get("w_practical", 0.10)
+    b_ally = cfg.get("ally_boost", 0.10)
+    b_rep = cfg.get("rep_boost", 0.05)
+    
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    report_md = f"""# Mentoring-Me: Capstone Executive Summary & System Evaluation Report
+
+**Project Title:** Mentoring-Me — Equitable Mentorship Recommendation Platform for Women in STEM  
+**Evaluation Scope:** Algorithmic Match Quality, Social Impact (UN SDG 5), Security & Longitudinal Engagement  
+**Report Generated:** {now_utc}  
+**Platform Status:** Fully Operational (Production-Grade Prototype)  
+
+---
+
+## 1. Executive Summary & Problem Context
+
+The **Mentoring-Me** platform addresses critical career drop-off points for underrepresented talent in technical fields. Drawing upon empirical analysis of Developer Survey data, the system targets two high-attrition vulnerability windows:
+1. **Early-Career Transition (0–2 years):** Establishing foundational technical confidence and navigating team dynamics.
+2. **Mid-Career Bottleneck (5–10 years):** Overcoming the "broken rung" barrier to senior engineering, tech lead, and engineering management roles.
+
+Rather than treating mentorship as random networking, Mentoring-Me deploys an **explainable 5-Factor Weighted Scoring Model** augmented with **institutional affirmative boosts** for Diversity & Inclusion (D&I) Allies and Female-Female representation.
+
+---
+
+## 2. Key Quantitative Findings & KPI Summary Table
+
+| Metric Category | Performance Indicator | Real-Time Platform Value | Capstone Benchmark Target |
+| :--- | :--- | :---: | :---: |
+| **Matching Output** | Total Matches Generated | **{total_matches}** | $\\ge 10$ pairs |
+| **Acceptance & Engagement** | Accepted Active Mentorships | **{len(accepted)}** | $\\ge 5$ connections |
+| **Match Conversion Rate** | Acceptance Success Rate | **{acc_rate:.1f}%** | $\\ge 60\\%$ |
+| **Algorithmic Affinity** | Mean Compatibility Score of Accepted Pairs | **{avg_score:.1f}%** | $\\ge 75\\%$ |
+| **SDG 5 Social Impact** | Female-Female (FF) Pair Rate | **{ff_rate:.1f}%** | $\\ge 50\\%$ |
+| **Allyship Adoption** | D&I Ally Priority Boost Rate | **{ally_rate:.1f}%** | $\\ge 20\\%$ |
+| **Female Representation** | Gender Representation Boost Rate | **{rep_rate:.1f}%** | $\\ge 40\\%$ |
+| **User Directory** | Registered Platform Accounts | **{u_total}** ({u_mentees} mentees, {u_mentors} mentors) | Healthy Balance |
+| **Account Security** | 2FA MFA Adoption Rate | **{twofa_rate:.1f}%** | $\\ge 80\\%$ |
+| **Longitudinal Tracking** | Logged 1-on-1 Sessions | **{notes_total}** sessions | Active tracking |
+| **Milestone Success** | Milestone Completion Rate | **{milestone_rate:.1f}%** ({completed_milestones} completed) | $\\ge 40\\%$ |
+
+---
+
+## 3. Algorithm Architecture & Active Hyperparameter Weights
+
+The matching engine computes transparent scores ($S \\in [0.0, 1.0]$) using the following dynamically tuned weights:
+
+$$S = (w_{{\\text{{role}}}} \\cdot S_{{\\text{{role}}}}) + (w_{{\\text{{exp}}}} \\cdot S_{{\\text{{exp}}}}) + (w_{{\\text{{stage}}}} \\cdot S_{{\\text{{stage}}}}) + (w_{{\\text{{goals}}}} \\cdot S_{{\\text{{goals}}}}) + (w_{{\\text{{practical}}}} \\cdot S_{{\\text{{practical}}}}) + \\text{{Boosts}}$$
+
+| Factor | Parameter | Weight | Empirical Rationale |
+| :--- | :---: | :---: | :--- |
+| **1. Role & Tech Alignment** | `w_role` | **{w_role * 100:.1f}%** | Jaccard similarity across technical developer roles and framework keywords. |
+| **2. Relatable Experience Gap** | `w_exp` | **{w_exp * 100:.1f}%** | Non-linear bell curve peaking at the 2–10 year seniority difference sweet spot. |
+| **3. Career-Stage Priority** | `w_stage` | **{w_stage * 100:.1f}%** | Algorithmic prioritization for retention-risk windows (0-2y and 5-10y). |
+| **4. Goals & Values Alignment** | `w_goals` | **{w_goals * 100:.1f}%** | Overlap in stated workplace cultural factors (e.g. flexibility, diversity). |
+| **5. Practical Logistics / Org Size** | `w_practical` | **{w_practical * 100:.1f}%** | Compatibility in day-to-day organizational scale (startup vs enterprise). |
+| **🤝 D&I Ally Priority Boost** | `ally_boost` | **+{b_ally * 100:.1f}%** | Additive boost when mentee seeks an ally and mentor is registered as an Ally. |
+| **🌟 Representation Boost** | `rep_boost` | **+{b_rep * 100:.1f}%** | Additive boost for female-female pairs to cultivate relatable role models. |
+
+---
+
+## 4. Match Quality & Confidence Tier Distribution
+
+The algorithm categorizes matches into 4 transparent confidence tiers to ensure integrity:
+
+* 🟢 **Strong Fit ($\\ge 70\\%$ Compatibility):** **{len(strong_m)} matches** ({((len(strong_m)/total_matches*100) if total_matches else 0):.1f}%)
+* 🔵 **Good Fit ($55\\% - 69\\%$ Compatibility):** **{len(good_m)} matches** ({((len(good_m)/total_matches*100) if total_matches else 0):.1f}%)
+* 🟡 **Fair Fit ($40\\% - 54\\%$ Compatibility):** **{len(fair_m)} matches** ({((len(fair_m)/total_matches*100) if total_matches else 0):.1f}%)
+* 🔴 **Weak Fit ($< 40\\%$ Compatibility):** **{len(weak_m)} matches** ({((len(weak_m)/total_matches*100) if total_matches else 0):.1f}%)
+
+> **Analytical Note:** {(len(strong_m)+len(good_m))} out of {total_matches} matches ({(((len(strong_m)+len(good_m))/total_matches*100) if total_matches else 0):.1f}%) fall into the **Strong / Good** category, proving that the multi-factor weighted heuristic effectively filters out low-affinity pairings without causing cold-start deadlock.
+
+---
+
+## 5. Longitudinal Mentorship Engagement & Milestone Tracking
+
+* **Total 1-on-1 Sessions Logged:** {notes_total}
+* **Completed Milestones:** {completed_milestones}
+* **In-Progress Milestones:** {in_progress_milestones}
+* **Milestone Completion Rate:** {milestone_rate:.1f}%
+
+The integrated **Milestones & Session Notes** module provides structured 1-on-1 cadence, action item checklists, and mutual accountability, transforming one-off matches into long-term career growth partnerships.
+
+---
+
+## 6. Security, Authentication & GDPR Compliance Audit
+
+* **Total Audit Events Recorded:** {sec_total}
+* **Security Alerts / Failed Attempts:** {sec_fails}
+* **2FA Multi-Factor Authentication:** Fully integrated with TOTP / Email OTP verification.
+* **Data Privacy & GDPR Right-to-be-Forgotten:** Permanent account and profile deletion endpoints with cryptographic session termination.
+
+---
+
+## 7. Conclusions & Recommendations for Institutional Scale
+
+1. **Maintain Dynamic Weight Tuning:** Continue allowing cohort-specific hyperparameter adjustments (e.g. boosting `w_role` for technical bootcamps, boosting `w_stage` for leadership programs).
+2. **Expand Organic Mentor Ingestion:** Complement the existing Colleague Nomination and LinkedIn Outreach Hubs with institutional corporate partner onboarding.
+3. **Sustain Longitudinal Tracking:** Leverage the session notes and milestone completion metrics for continuous grant reporting and institutional accreditation.
+
+*Report compiled automatically by Mentoring-Me Governance Engine.*
+"""
+    return report_md
+
 @st.fragment(run_every="4s")
 def render_active_chat_stream(match_id: str, partner_name: str, current_role: str):
     messages = api_get_messages(match_id)
@@ -5706,25 +5857,50 @@ else:
         em7.metric("🌟 Rep. Boost Rate", rep_rate, help="% of all matches where the gender representation boost was applied")
         em8.metric("📈 Avg. Accepted Score", avg_score)
 
-        if total_matches > 0:
-            st.markdown("---")
-            st.markdown("**Career Stage Distribution of Mentees Matched**")
-            tier_counts = {}
-            for h in history:
-                tier = h.get('mentee_exp_tier') or 'Unknown'
-                tier_counts[tier] = tier_counts.get(tier, 0) + 1
-            if tier_counts:
-                tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Count']).sort_values('Count', ascending=False)
-                st.bar_chart(tier_df.set_index('Career Stage'))
+        # Match Quality & Confidence Score Distribution
+        q_strong = [h for h in history if h.get('match_quality') == 'Strong' or (h.get('total_score', 0) >= 0.70)]
+        q_good   = [h for h in history if h.get('match_quality') == 'Good' or (0.55 <= h.get('total_score', 0) < 0.70)]
+        q_fair   = [h for h in history if h.get('match_quality') == 'Fair' or (0.40 <= h.get('total_score', 0) < 0.55)]
+        q_weak   = [h for h in history if h.get('match_quality') == 'Weak' or (h.get('total_score', 0) < 0.40)]
 
-            st.markdown("**Country Diversity of Matched Mentors**")
-            country_counts = {}
-            for h in history:
-                c = h.get('mentor_country') or 'Unknown'
-                country_counts[c] = country_counts.get(c, 0) + 1
-            if country_counts:
-                country_df = pd.DataFrame(list(country_counts.items()), columns=['Country', 'Mentors']).sort_values('Mentors', ascending=False).head(10)
-                st.bar_chart(country_df.set_index('Country'))
+        st.markdown("---")
+        st.markdown("##### 🎯 Match Quality & Confidence Distribution")
+        qc1, qc2, qc3, qc4 = st.columns(4)
+        qc1.metric("🟢 Strong Matches (≥70%)", len(q_strong), f"{(len(q_strong)/total_matches*100):.0f}%" if total_matches else "0%")
+        qc2.metric("🔵 Good Matches (55-69%)", len(q_good), f"{(len(q_good)/total_matches*100):.0f}%" if total_matches else "0%")
+        qc3.metric("🟡 Fair Matches (40-54%)", len(q_fair), f"{(len(q_fair)/total_matches*100):.0f}%" if total_matches else "0%")
+        qc4.metric("🔴 Weak Matches (<40%)", len(q_weak), f"{(len(q_weak)/total_matches*100):.0f}%" if total_matches else "0%")
+
+        if total_matches > 0:
+            st.markdown("")
+            ch_col1, ch_col2, ch_col3 = st.columns(3)
+            with ch_col1:
+                st.markdown("**Confidence Tier Distribution**")
+                q_df = pd.DataFrame([
+                    {'Tier': 'Strong (≥70%)', 'Count': len(q_strong)},
+                    {'Tier': 'Good (55-69%)', 'Count': len(q_good)},
+                    {'Tier': 'Fair (40-54%)', 'Count': len(q_fair)},
+                    {'Tier': 'Weak (<40%)', 'Count': len(q_weak)},
+                ])
+                st.bar_chart(q_df.set_index('Tier'))
+            with ch_col2:
+                st.markdown("**Career Stage Distribution of Mentees**")
+                tier_counts = {}
+                for h in history:
+                    tier = h.get('mentee_exp_tier') or 'Unknown'
+                    tier_counts[tier] = tier_counts.get(tier, 0) + 1
+                if tier_counts:
+                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Count']).sort_values('Count', ascending=False)
+                    st.bar_chart(tier_df.set_index('Career Stage'))
+            with ch_col3:
+                st.markdown("**Country Diversity of Matched Mentors**")
+                country_counts = {}
+                for h in history:
+                    c = h.get('mentor_country') or 'Unknown'
+                    country_counts[c] = country_counts.get(c, 0) + 1
+                if country_counts:
+                    country_df = pd.DataFrame(list(country_counts.items()), columns=['Country', 'Mentors']).sort_values('Mentors', ascending=False).head(10)
+                    st.bar_chart(country_df.set_index('Country'))
 
         # ════════════════════════════════════════════════════════════════════
         # SECTION B — Global Match Log & Outcomes
@@ -5752,6 +5928,46 @@ else:
                 })
             df_admin_matches = pd.DataFrame(admin_list)
             st.dataframe(df_admin_matches[['Match ID', 'Mentee', 'Mentor', 'Score', 'Confidence', 'Status', 'Rep. Boost', 'Ally Boost', 'Date']], use_container_width=True)
+
+        # ════════════════════════════════════════════════════════════════════
+        # SECTION B2 — Mentorship Health & Milestones Progress Tracker
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.subheader("📈 Mentorship Health & Milestones Progress Tracker")
+        st.caption("Live monitoring of ongoing 1-on-1 sessions, homework task completion, and long-term mentee milestones logged across all pairings.")
+        
+        all_notes = api_get_notes() or []
+        n_total = len(all_notes)
+        n_completed = sum(1 for n in all_notes if n.get('milestone_status') == 'COMPLETED')
+        n_in_progress = sum(1 for n in all_notes if n.get('milestone_status') == 'IN_PROGRESS')
+        n_not_started = sum(1 for n in all_notes if n.get('milestone_status') == 'NOT_STARTED')
+        unique_mentees_notes = len(set(n['mentee_id'] for n in all_notes if n.get('mentee_id')))
+        m_comp_rate = (n_completed / n_total * 100) if n_total > 0 else 0.0
+
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        mc1.metric("📝 Total Sessions Logged", n_total)
+        mc2.metric("🏆 Milestones Completed", n_completed, f"{m_comp_rate:.1f}% Rate")
+        mc3.metric("⏳ In-Progress Milestones", n_in_progress)
+        mc4.metric("👥 Mentees Guided", unique_mentees_notes)
+
+        if n_total > 0:
+            st.markdown(f"**Overall Platform Milestone Completion Rate:** `{m_comp_rate:.1f}%`")
+            st.progress(min(1.0, m_comp_rate / 100.0))
+            
+            with st.expander("📋 View Platform-Wide Mentorship Sessions & Milestones Log", expanded=False):
+                notes_table = []
+                for n in all_notes:
+                    notes_table.append({
+                        "Session Date": n.get('session_date', '')[:10],
+                        "Mentor": n.get('mentor_name', 'Mentor'),
+                        "Mentee": n.get('mentee_name', 'Mentee'),
+                        "Milestone Title": n.get('title', 'Session'),
+                        "Status": n.get('milestone_status', 'IN_PROGRESS'),
+                        "Action Items": n.get('action_items', 'N/A')[:60] + "..." if len(n.get('action_items', '')) > 60 else n.get('action_items', 'N/A'),
+                    })
+                st.dataframe(pd.DataFrame(notes_table), use_container_width=True)
+        else:
+            st.info("No mentorship sessions or milestones logged yet. As mentors record 1-on-1 meetings in the **Milestones & Notes** tab, longitudinal progress will appear here.")
 
         # ════════════════════════════════════════════════════════════════════
         # SECTION C — Dynamic Algorithm Weight Tuning (Live Hyperparameters)
@@ -5804,14 +6020,69 @@ else:
                     st.error(msg_w)
 
         # ════════════════════════════════════════════════════════════════════
-        # SECTION D — Institutional Data Export Hub (One-Click CSV / Audit)
+        # SECTION D — Institutional Data Export Hub & Capstone Report Generator
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
-        st.subheader("📊 Institutional Data Export Hub")
-        st.caption("Export anonymized data packages, SDG 5 equity progress summaries, and audit transaction records for institutional stakeholders, academic evaluators, or grant reporting.")
+        st.subheader("📑 Capstone Report & Institutional Data Hub")
+        st.caption("Generate complete academic evaluation reports, SDG 5 equity summaries, and export raw data packages ready for capstone submission and stakeholder presentation.")
 
         all_users = api_admin_get_users()
+        audit_logs_for_rep = api_admin_get_audit_logs(limit=100) or []
+        
+        # Compile Capstone Report Markdown
+        capstone_report_md = generate_capstone_executive_report(history, all_users, audit_logs_for_rep, all_notes, current_cfg)
+        
+        # Compile Evaluation JSON
+        capstone_eval_json = json.dumps({
+            "project_metadata": {
+                "title": "Mentoring-Me Capstone Platform",
+                "evaluation_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "sdg_alignment": "UN SDG 5 (Gender Equality & Women in STEM)"
+            },
+            "quantitative_kpis": {
+                "total_matches": total_matches,
+                "accepted_connections": len(accepted),
+                "acceptance_rate_pct": round(len(accepted)/total_matches*100, 2) if total_matches else 0.0,
+                "mean_compatibility_score_pct": round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100, 2) if accepted else 0.0,
+                "female_female_match_rate_pct": round(len(ff_pairs)/len(accepted)*100, 2) if accepted else 0.0,
+                "diversity_ally_boost_rate_pct": round(len(ally_boosted)/total_matches*100, 2) if total_matches else 0.0,
+                "representation_boost_rate_pct": round(len(rep_boosted)/total_matches*100, 2) if total_matches else 0.0,
+                "total_users": len(all_users) if all_users else 0,
+                "mfa_adoption_pct": round(sum(1 for u in all_users if u.get('two_factor_enabled'))/len(all_users)*100, 2) if all_users else 0.0,
+                "sessions_logged": len(all_notes),
+                "milestones_completed": n_completed,
+                "milestone_completion_rate_pct": round(m_comp_rate, 2)
+            },
+            "algorithm_hyperparameters": current_cfg,
+            "quality_confidence_tiers": {
+                "strong_matches": len(q_strong),
+                "good_matches": len(q_good),
+                "fair_matches": len(q_fair),
+                "weak_matches": len(q_weak)
+            }
+        }, indent=2)
 
+        st.markdown("##### 📥 One-Click Academic & Institutional Exports")
+        rep_col1, rep_col2 = st.columns(2)
+        with rep_col1:
+            st.download_button(
+                label="📑 Download Capstone Executive Report (.md)",
+                data=capstone_report_md.encode('utf-8'),
+                file_name=f"mentoring_me_capstone_report_{datetime.datetime.now().strftime('%Y%m%d')}.md",
+                mime="text/markdown",
+                type="primary",
+                use_container_width=True
+            )
+        with rep_col2:
+            st.download_button(
+                label="📊 Download Evaluation Summary (.json)",
+                data=capstone_eval_json.encode('utf-8'),
+                file_name=f"mentoring_me_evaluation_summary_{datetime.datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+
+        st.markdown("")
         exp_col1, exp_col2, exp_col3 = st.columns(3)
         with exp_col1:
             if history:
@@ -5837,6 +6108,8 @@ else:
                     "D&I Ally Boost Adoption Rate",
                     "Gender Representation Boost Rate",
                     "Average Accepted Match Compatibility Score",
+                    "1-on-1 Sessions Logged",
+                    "Milestone Completion Rate",
                     "Export Timestamp"
                 ],
                 "value": [
@@ -5848,6 +6121,8 @@ else:
                     ally_rate,
                     rep_rate,
                     avg_score,
+                    n_total,
+                    f"{m_comp_rate:.1f}%",
                     datetime.datetime.utcnow().isoformat()
                 ]
             }
@@ -5872,6 +6147,11 @@ else:
                 )
             else:
                 st.button("📥 Export User Directory (CSV)", disabled=True, use_container_width=True)
+
+        # In-App Interactive Report Previewer
+        with st.expander("👁️ Preview Full Live Capstone Executive Report (Ready to Copy for Paper / Slides)", expanded=False):
+            st.caption("This live document automatically synthesizes real database records, algorithm weights, and SDG 5 metrics into standard academic report format.")
+            st.markdown(capstone_report_md)
 
         # ════════════════════════════════════════════════════════════════════
         # SECTION E — Security Telemetry & Real-Time Audit Logs

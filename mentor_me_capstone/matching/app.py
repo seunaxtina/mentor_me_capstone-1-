@@ -4083,10 +4083,11 @@ else:
                     st.caption("This context helps the AI coach and your matched mentor understand your background.")
 
                     prefer_diversity_ally = st.checkbox(
-                        "Prefer a mentor who is an active Diversity & Inclusion Ally",
+                        "🤝 Welcome Guidance from Diversity & Inclusion (D&I) Allies",
                         value=bool(mentee.get('prefer_diversity_ally', False)),
-                        help="Filters matches to mentors who have self-identified as committed to gender equality and inclusive workplaces."
+                        help="Check this if you are happy to receive mentorship from senior leaders of all genders (including supportive male allies) who actively sponsor and advocate for women in STEM. Applies a +10% matching boost."
                     )
+                    st.caption("💡 Check this if you are happy to receive mentorship from senior leaders of all genders (including supportive male allies) who actively sponsor and advocate for women in STEM. Unlocks a **+10% matching priority boost**.")
 
                 # ── Section 2: Mentor Search Preferences ──────────────────
                 with st.expander("🎯 Mentor Search Preferences & Match Boosting", expanded=True):
@@ -5460,10 +5461,11 @@ else:
                     st.caption("This is shown to potential mentees when reviewing your profile.")
 
                     is_diversity_ally = st.checkbox(
-                        "I am an active Diversity & Inclusion Ally",
+                        "🤝 Register as an Active Diversity & Inclusion (D&I) Ally",
                         value=bool(mentor.get('is_diversity_ally', False)),
-                        help="Marks you as committed to gender equality and supporting underrepresented groups in tech. Mentees who prefer a D&I-ally mentor will be prioritised to match with you."
+                        help="Check this if you are committed to advocating for women and underrepresented engineers, providing constructive career sponsorship, and fostering psychological safety. Mentees seeking supportive allies will be prioritized to match with you."
                     )
+                    st.caption("💡 Check this if you are committed to advocating for women and underrepresented engineers, providing constructive career sponsorship, and fostering psychological safety. Mentees seeking supportive allies will be prioritized to match with you (**+10% Boost**).")
 
                 # ── Section 2: Mentorship Capacity ─────────────────────────
                 with st.expander("🎯 Mentorship Capacity & Availability", expanded=True):

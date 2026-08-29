@@ -23,15 +23,23 @@ LAST_NAMES = [
     "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson"
 ]
 
-def seed_db():
+def seed_db(force_recreate: bool = False):
     print("Initializing database tables...")
-    Base.metadata.drop_all(bind=engine)
+    if force_recreate:
+        Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     
     db = SessionLocal()
     
     # Locate the CSV file
-    csv_paths = ['so2020_cleaned.csv', 'so2020.csv', 'matching/so2020.csv', 'matching/so2020_cleaned.csv']
+    csv_paths = [
+        'so2020_cleaned.csv', 
+        'so2020.csv', 
+        'matching/so2020.csv', 
+        'matching/so2020_cleaned.csv',
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'so2020_cleaned.csv'),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'so2020.csv')
+    ]
     csv_path = None
     for path in csv_paths:
         if os.path.exists(path):
@@ -152,17 +160,24 @@ def seed_db():
     db.add_all(mentors_to_insert)
     db.commit()
     
-    # Create admin user
-    admin_uuid = "admin-uuid-001"
-    admin_user = models.User(
-        id=admin_uuid,
-        email="admin@mentoring-me.demo",
-        password_hash=get_password_hash("adminpassword"),
-        role="ADMIN",
-        two_factor_enabled=False
-    )
-    db.add(admin_user)
-    db.commit()
+    # Create admin user if not already present
+    admin_exists = db.query(models.User).filter(
+        (models.User.email == "admin@mentoring-me.demo") | (models.User.email == "admin@mentorme.demo")
+    ).first()
+    if not admin_exists:
+        admin_uuid = "admin-uuid-001"
+        admin_user = models.User(
+            id=admin_uuid,
+            email="admin@mentoring-me.demo",
+            name="Admin Demo",
+            password_hash=get_password_hash("adminpassword"),
+            role="ADMIN",
+            two_factor_enabled=False,
+            is_verified=True,
+            is_active=True
+        )
+        db.add(admin_user)
+        db.commit()
     
     print("Database seeding complete!")
     print(f"Seeded Mentees: {mentee_count}")

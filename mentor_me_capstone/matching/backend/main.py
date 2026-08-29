@@ -704,8 +704,9 @@ def ensure_user_profile(user: models.User, target_role: str, db: Session, name: 
     """
     display_name = name or user.name or (user.email.split("@")[0].capitalize() if user.email else "User")
     avatar = picture or user.avatar_url
+    target_role_upper = (target_role or user.role or "MENTEE").upper()
     
-    if target_role == "MENTOR":
+    if target_role_upper == "MENTOR":
         mentor = db.query(models.Mentor).filter(models.Mentor.id == user.id).first()
         if not mentor:
             mentee = db.query(models.Mentee).filter(models.Mentee.id == user.id).first()
@@ -736,7 +737,7 @@ def ensure_user_profile(user: models.User, target_role: str, db: Session, name: 
             db.refresh(mentor)
         return mentor
         
-    elif target_role == "MENTEE":
+    elif target_role_upper == "MENTEE":
         mentee = db.query(models.Mentee).filter(models.Mentee.id == user.id).first()
         if not mentee:
             mentor = db.query(models.Mentor).filter(models.Mentor.id == user.id).first()
@@ -1109,18 +1110,25 @@ def sso_callback(req: schemas.SSOCallbackRequest, db: Session = Depends(get_db))
 def read_current_user_profile(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
     mentee_resp = None
     mentor_resp = None
+    u_role = (current_user.role or "MENTEE").upper()
     
-    if current_user.role == "MENTEE":
+    if u_role == "MENTEE":
         mentee = db.query(models.Mentee).filter(models.Mentee.id == current_user.id).first()
         if not mentee:
             mentee = ensure_user_profile(current_user, "MENTEE", db)
         if mentee:
+            if not current_user.name and mentee.name:
+                current_user.name = mentee.name
+                db.commit()
             mentee_resp = schemas.MenteeProfileResponse.model_validate(mentee)
-    elif current_user.role == "MENTOR":
+    elif u_role == "MENTOR":
         mentor = db.query(models.Mentor).filter(models.Mentor.id == current_user.id).first()
         if not mentor:
             mentor = ensure_user_profile(current_user, "MENTOR", db)
         if mentor:
+            if not current_user.name and mentor.name:
+                current_user.name = mentor.name
+                db.commit()
             mentor_resp = schemas.MentorProfileResponse.model_validate(mentor)
             
     user_resp = schemas.UserResponse.model_validate(current_user)
@@ -1137,10 +1145,14 @@ def update_profile(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user.role == "MENTEE":
+    u_role = (current_user.role or "MENTEE").upper()
+    if "name" in profile_updates and profile_updates["name"]:
+        current_user.name = profile_updates["name"]
+        
+    if u_role == "MENTEE":
         mentee = db.query(models.Mentee).filter(models.Mentee.id == current_user.id).first()
         if not mentee:
-            raise HTTPException(status_code=404, detail="Mentee profile not found.")
+            mentee = ensure_user_profile(current_user, "MENTEE", db)
         
         # Valid fields to update
         for field in ['name', 'country', 'ed_level', 'dev_type', 'years_code_pro', 'job_factors', 'org_size', 'additional_details', 'cv_path', 'profile_pic', 'gender', 'target_mentor_expertise', 'target_mentor_country', 'target_mentor_min_years', 'alternative_emails', 'prefer_diversity_ally', 'timezone', 'linkedin_link']:
@@ -1158,10 +1170,10 @@ def update_profile(
         db.commit()
         db.refresh(mentee)
         
-    elif current_user.role == "MENTOR":
+    elif u_role == "MENTOR":
         mentor = db.query(models.Mentor).filter(models.Mentor.id == current_user.id).first()
         if not mentor:
-            raise HTTPException(status_code=404, detail="Mentor profile not found.")
+            mentor = ensure_user_profile(current_user, "MENTOR", db)
             
         for field in ['name', 'country', 'ed_level', 'dev_type', 'years_code_pro', 'job_factors', 'org_size', 'is_active', 'max_mentees', 'additional_details', 'contact_link', 'cv_path', 'profile_pic', 'gender', 'is_diversity_ally', 'timezone', 'linkedin_link']:
             if field in profile_updates:
@@ -1177,6 +1189,8 @@ def update_profile(
         db.commit()
         db.refresh(mentor)
         
+    db.commit()
+    db.refresh(current_user)
     # Return refreshed user profile info
     return read_current_user_profile(current_user, db)
 
@@ -1222,6 +1236,7 @@ def freestyle_match_score(mentee_text: str, mentor_text: str, mentor_devtype: st
 @app.get("/api/v1/matches", response_model=list[schemas.MatchResponse])
 def get_matches(
     limit: int = 5,
+    recalculate: bool = False,
     current_user: models.User = Depends(auth.require_role(["MENTEE"])),
     db: Session = Depends(get_db)
 ):
@@ -1229,6 +1244,72 @@ def get_matches(
     if not mentee:
         raise HTTPException(status_code=404, detail="Mentee profile not found.")
         
+    # If not explicitly recalculating, check for existing stored proposals
+    if not recalculate:
+        existing_proposals = db.query(models.Match).filter(
+            models.Match.mentee_id == mentee.id, 
+            models.Match.status == "PROPOSED"
+        ).order_by(models.Match.total_score.desc()).limit(limit).all()
+        
+        if existing_proposals:
+            resp_list = []
+            for m in existing_proposals:
+                mentor_prof = db.query(models.Mentor).filter(models.Mentor.id == m.mentor_id).first()
+                if not mentor_prof or not mentor_prof.is_active:
+                    continue
+                mentor_user = db.query(models.User).filter(models.User.id == m.mentor_id).first()
+                exp_gap = float(mentor_prof.years_code_pro or 0.0) - float(mentee.years_code_pro or 0.0)
+                is_rep = (mentee.gender == "Female" and mentor_prof.gender == "Female")
+                is_ally = bool(mentee.prefer_diversity_ally and mentor_prof.is_diversity_ally)
+                
+                resp_list.append(schemas.MatchResponse(
+                    id=m.id,
+                    mentee_id=m.mentee_id,
+                    mentor_id=m.mentor_id,
+                    role_score=m.role_score,
+                    experience_score=m.experience_score,
+                    career_stage_score=m.career_stage_score,
+                    goals_score=m.goals_score,
+                    practical_score=m.practical_score,
+                    total_score=m.total_score,
+                    match_quality=m.match_quality,
+                    status=m.status,
+                    created_at=m.created_at,
+                    availability_note=m.availability_note,
+                    mentee_notified=m.mentee_notified,
+                    mentor_notified=m.mentor_notified,
+                    mentor_name=mentor_prof.name if mentor_prof else "Anonymous",
+                    mentor_timezone=mentor_prof.timezone if mentor_prof else "UTC+00:00 (London, GMT)",
+                    mentee_timezone=mentee.timezone if mentee else "UTC+00:00 (London, GMT)",
+                    mentor_devtype=mentor_prof.dev_type if mentor_prof else "Not stated",
+                    mentor_years=mentor_prof.years_code_pro if mentor_prof else 0.0,
+                    mentor_country=mentor_prof.country if mentor_prof else "Not stated",
+                    mentor_org_size=mentor_prof.org_size if mentor_prof else "Not stated",
+                    mentor_cv_path=mentor_prof.cv_path if mentor_prof else None,
+                    mentor_profile_pic=mentor_prof.profile_pic if mentor_prof else None,
+                    mentor_ed_level=mentor_prof.ed_level if mentor_prof else None,
+                    mentor_job_factors=mentor_prof.job_factors if mentor_prof else None,
+                    mentor_additional_details=mentor_prof.additional_details if mentor_prof else None,
+                    mentor_gender=mentor_prof.gender if mentor_prof else None,
+                    mentee_gender=mentee.gender if mentee else None,
+                    is_representation_boosted=is_rep,
+                    is_ally_boosted=is_ally,
+                    mentor_linkedin_link=mentor_prof.linkedin_link if mentor_prof else None,
+                    mentee_linkedin_link=mentee.linkedin_link if mentee else None,
+                    mentee_name=mentee.name if mentee else "Anonymous",
+                    mentee_devtype=mentee.dev_type if mentee else "Not stated",
+                    mentee_years=mentee.years_code_pro if mentee else 0.0,
+                    mentee_country=mentee.country if mentee else "Not stated",
+                    mentee_org_size=mentee.org_size if mentee else "Not stated",
+                    mentee_cv_path=mentee.cv_path if mentee else None,
+                    mentee_profile_pic=mentee.profile_pic if mentee else None,
+                    mentee_ed_level=mentee.ed_level if mentee else None,
+                    mentee_job_factors=mentee.job_factors if mentee else None,
+                    mentee_additional_details=mentee.additional_details if mentee else None
+                ))
+            if resp_list:
+                return resp_list
+
     # Query all active mentors from database
     active_mentors = db.query(models.Mentor).filter(models.Mentor.is_active == True).all()
     if not active_mentors:
@@ -1348,6 +1429,20 @@ def get_matches(
             'mentor_ed_level': m.ed_level,
             'mentor_job_factors': m.job_factors,
             'mentor_additional_details': m.additional_details,
+            'mentor_timezone': m.timezone or "UTC+00:00 (London, GMT)",
+            'mentee_timezone': mentee.timezone or "UTC+00:00 (London, GMT)",
+            'mentor_linkedin_link': m.linkedin_link,
+            'mentee_linkedin_link': mentee.linkedin_link,
+            'mentee_name': mentee.name,
+            'mentee_devtype': mentee.dev_type,
+            'mentee_years': mentee.years_code_pro,
+            'mentee_country': mentee.country,
+            'mentee_org_size': mentee.org_size,
+            'mentee_cv_path': mentee.cv_path,
+            'mentee_profile_pic': mentee.profile_pic,
+            'mentee_ed_level': mentee.ed_level,
+            'mentee_job_factors': mentee.job_factors,
+            'mentee_additional_details': mentee.additional_details,
             'experience_gap': exp_gap,
             'role_score': breakdown['role'],
             'experience_score': breakdown['experience'],
@@ -1515,9 +1610,10 @@ def match_action(action_in: schemas.MatchAction, current_user: models.User = Dep
 
 @app.get("/api/v1/matches/history", response_model=list[schemas.MatchResponse])
 def get_match_history(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
-    if current_user.role == "MENTEE":
+    u_role = (current_user.role or "MENTEE").upper()
+    if u_role == "MENTEE":
         matches = db.query(models.Match).filter(models.Match.mentee_id == current_user.id).all()
-    elif current_user.role == "MENTOR":
+    elif u_role == "MENTOR":
         matches = db.query(models.Match).filter(models.Match.mentor_id == current_user.id).all()
     else:
         matches = db.query(models.Match).all()

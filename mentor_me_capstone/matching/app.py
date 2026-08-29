@@ -1212,10 +1212,11 @@ def api_update_profile(profile_data):
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
-def api_get_matches():
+def api_get_matches(recalculate=False):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = api_http.get(f"{API_URL}/matches", headers=headers)
+        params = {"recalculate": "true"} if recalculate else {}
+        response = api_http.get(f"{API_URL}/matches", headers=headers, params=params)
         if response.status_code == 200:
             return response.json()
         else:
@@ -2749,8 +2750,8 @@ else:
         clear_auth_session()
         st.rerun()
         
-    user = profile['user']
-    role = user['role']
+    user = profile.get('user', {})
+    role = (user.get('role') or "MENTEE").upper()
     
     # Derive user display name from profile
     display_name = None
@@ -2760,7 +2761,7 @@ else:
         display_name = profile['mentor'].get('name')
         
     if not display_name or display_name.strip() == "":
-        display_name = user.get('email', 'User')
+        display_name = user.get('name') or user.get('email', 'User')
     
     st.sidebar.header("Navigation Panel")
     st.sidebar.markdown(f"👤 **User:** `{display_name}`")
@@ -3116,13 +3117,22 @@ else:
                     )
                 elif mentee.get('prefer_diversity_ally'):
                     st.info("🤝 **Ally-Boosted Results**: Your preference for a Diversity & Inclusion Ally mentor is active — matching results reflect this.")
-                if st.button("🚀 Search Active Mentor Pool"):
+                # Auto-restore match proposals from database if not already in session state
+                if 'current_matches' not in st.session_state or st.session_state['current_matches'] is None:
+                    db_proposals = api_get_matches(recalculate=False)
+                    if db_proposals:
+                        st.session_state['current_matches'] = sorted(db_proposals, key=lambda m: m.get('total_score', 0), reverse=True)
+
+                col_s1, col_s2 = st.columns([2, 1])
+                btn_label = "🔄 Re-calculate / Refresh Matches" if st.session_state.get('current_matches') else "🚀 Search Active Mentor Pool"
+                if col_s1.button(btn_label, type="primary"):
                     with st.spinner("Calculating match coefficients..."):
-                        matches = api_get_matches()
+                        matches = api_get_matches(recalculate=True)
                         if not matches:
                             st.info("No mentors match your profile currently, or the pool is empty.")
                         else:
                             st.session_state['current_matches'] = sorted(matches, key=lambda m: m.get('total_score', 0), reverse=True)
+                            st.rerun()
                 
                 if 'current_matches' in st.session_state and st.session_state['current_matches']:
                     matches = st.session_state['current_matches']

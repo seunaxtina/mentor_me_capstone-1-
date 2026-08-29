@@ -11,7 +11,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     name = Column(String, nullable=True)
-    role = Column(String, default="mentee")  # 'mentee', 'mentor', 'admin'
+    role = Column(String, default="MENTEE")  # 'MENTEE', 'MENTOR', 'ADMIN'
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     two_factor_enabled = Column(Boolean, default=True)

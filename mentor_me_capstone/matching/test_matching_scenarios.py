@@ -12,12 +12,24 @@ SCENARIOS COVERED:
 5. Real "hard" case — a mentee with a rare/niche role combination from actual data
 """
 
+import os
 import pandas as pd
+import sys
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
 from matching_algorithm_v1 import (
     compute_match_score, find_top_matches, get_mentee_pool, get_mentor_pool
 )
 
-df = pd.read_csv('so2020_cleaned.csv')
+_csv_path = 'so2020_cleaned.csv'
+if not os.path.exists(_csv_path):
+    _csv_path = os.path.join(_current_dir, 'so2020_cleaned.csv')
+if not os.path.exists(_csv_path):
+    _csv_path = os.path.join(_current_dir, 'so2020.csv')
+
+df = pd.read_csv(_csv_path)
 
 
 def make_synthetic_profile(respondent_id, devtype, years, exp_tier, job_factors, org_size='Not stated'):

@@ -12,8 +12,15 @@ validate against), so "accuracy" here is defined operationally as:
    good and bad matches)?
 """
 
+import os
+import sys
 import pandas as pd
 import numpy as np
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
 from matching_algorithm_v1 import (
     compute_match_score, find_top_matches, get_mentee_pool, get_mentor_pool,
     match_quality_label
@@ -21,7 +28,13 @@ from matching_algorithm_v1 import (
 
 np.random.seed(42)  # reproducibility
 
-df = pd.read_csv('so2020_cleaned.csv')
+_csv_path = 'so2020_cleaned.csv'
+if not os.path.exists(_csv_path):
+    _csv_path = os.path.join(_current_dir, 'so2020_cleaned.csv')
+if not os.path.exists(_csv_path):
+    _csv_path = os.path.join(_current_dir, 'so2020.csv')
+
+df = pd.read_csv(_csv_path)
 mentees = get_mentee_pool(df)
 mentors = get_mentor_pool(df)
 print(f"Full mentee pool: {mentees.shape[0]} | Full mentor pool: {mentors.shape[0]}")

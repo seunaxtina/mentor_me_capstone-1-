@@ -2123,10 +2123,57 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
             partner_cv = curr_match.get('mentor_cv_path' if current_role == 'MENTEE' else 'mentee_cv_path')
             
             with st.container(border=True):
-                h_col1, h_col2, h_col3 = st.columns([3, 1, 1])
+                h_col1, h_cal, h_col2, h_col3 = st.columns([2.6, 1.3, 1.1, 1.0])
                 with h_col1:
                     st.markdown(f"#### 💬 {partner_name}")
                     st.caption(f"📍 {partner_country} · {partner_roles}")
+                
+                with h_cal:
+                    with st.popover("📅 Sync Meeting", use_container_width=True):
+                        st.markdown("##### 📅 Meeting & Calendar Sync")
+                        st.caption(f"Sync your 1-on-1 mentorship session with **{partner_name}** directly to your calendar.")
+                        
+                        m_name = (profile_data.get('mentee', {}).get('name') if current_role == 'MENTEE' else profile_data.get('mentor', {}).get('name')) or ('Mentee' if current_role == 'MENTEE' else 'Mentor')
+                        title_val = f"Mentoring-Me 1-on-1: {m_name} & {partner_name}"
+                        
+                        sel_slot = st.session_state.get('selected_scheduled_slot')
+                        date_time_line = f"Date/Time: {sel_slot}\n" if (sel_slot and sel_slot != "None of these work / Coordinate Custom Time") else "Date/Time: As coordinated in chat\n"
+                        
+                        cal_body = (
+                            f"Title: {title_val}\n"
+                            f"{date_time_line}"
+                            f"Duration: 25 minutes\n\n"
+                            f"Mentorship 1-on-1 Agenda:\n"
+                            f"1. Icebreaker & Introductions (5 mins)\n"
+                            f"2. Partnership Goals & Development Milestones (10 mins)\n"
+                            f"3. Discussion Topic / Technical Roadmapping (5 mins)\n"
+                            f"4. Action Items & Next Steps (5 mins)\n\n"
+                            f"Platform: Mentoring-Me Platform"
+                        )
+                        
+                        chat_gcal = generate_google_calendar_url(
+                            title=title_val,
+                            description=cal_body,
+                            location="Virtual (Mentoring-Me Platform)"
+                        )
+                        chat_ics = generate_ics_calendar_file(
+                            title=title_val,
+                            description=cal_body,
+                            location="Virtual (Mentoring-Me Platform)"
+                        )
+                        
+                        st.link_button("📅 Add to Google Calendar", chat_gcal, use_container_width=True)
+                        st.download_button(
+                            "📥 Download .ICS Invite",
+                            data=chat_ics,
+                            file_name=f"mentoring_me_{partner_name.replace(' ', '_')}.ics",
+                            mime="text/calendar",
+                            use_container_width=True,
+                            key=f"chat_pop_ics_{curr_match['id']}"
+                        )
+                        with st.expander("📋 View Meeting Agenda"):
+                            st.text_area("Event Agenda", value=cal_body, height=120, key=f"chat_cal_body_{curr_match['id']}", label_visibility="collapsed")
+                            
                 with h_col2:
                     with st.popover("👤 Profile", use_container_width=True):
                         display_profile_card(
@@ -2153,6 +2200,17 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
                                 st.info("CV preview unavailable.")
                     else:
                         st.write("")
+
+                # Quick breadcrumb return button to matches
+                target_tab_name = "Platform Matches" if current_role == "MENTEE" else "Mentorship Requests"
+                btn_text = "🎯 ← Return to Matches & Scheduling" if current_role == "MENTEE" else "🎯 ← Return to Requests & Capacity"
+                c_ret1, c_ret2 = st.columns([2.2, 3.8])
+                with c_ret1:
+                    if st.button(btn_text, key=f"chat_ret_btn_{curr_match['id']}", use_container_width=True):
+                        st.session_state['trigger_tab_switch'] = target_tab_name
+                        st.rerun()
+                with c_ret2:
+                    st.caption("💡 *Tip*: Use **📅 Sync Meeting** above to add confirmed sessions to Google Calendar or download an `.ics` file.")
 
                 st.markdown("---")
                 render_active_chat_stream(curr_match['id'], partner_name, current_role)

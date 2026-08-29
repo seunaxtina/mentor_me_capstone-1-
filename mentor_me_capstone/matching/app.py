@@ -3141,6 +3141,16 @@ def render_mentor_milestones_tab(mentor, history):
     if not connected_matches:
         st.info("👋 **No Active Mentees Yet**: Once you accept a mentorship request in the **Mentorship Requests** tab, you will be able to log meeting notes, set homework checklists, and track milestones here.")
         return
+
+    # Persistent feedback banner across reruns
+    if 'milestone_action_feedback' in st.session_state and st.session_state['milestone_action_feedback']:
+        mf_type, mf_msg = st.session_state.pop('milestone_action_feedback')
+        if mf_type == "success":
+            st.success(mf_msg)
+        elif mf_type == "info":
+            st.info(mf_msg)
+        elif mf_type == "error":
+            st.error(mf_msg)
         
     mentee_map = {}
     for m in connected_matches:
@@ -3248,7 +3258,11 @@ def render_mentor_milestones_tab(mentor, history):
                     }
                     success, res = api_create_note(payload)
                     if success:
-                        st.success("Session note saved successfully!")
+                        st.toast("📝 Session note saved successfully!", icon="✅")
+                        st.session_state['milestone_action_feedback'] = (
+                            "success",
+                            f"📝 **Session note '{n_title.strip()}' saved successfully!** It is now visible in your mentee's shared growth tracker."
+                        )
                         st.rerun()
                     else:
                         st.error(f"Error saving note: {res}")
@@ -3309,10 +3323,14 @@ def render_mentor_milestones_tab(mentor, history):
                 if st_val != "COMPLETED":
                     if st.button("Mark Completed", key=f"mark_done_{n_id}_{idx}", type="secondary"):
                         api_update_note(n_id, {"milestone_status": "COMPLETED"})
+                        st.toast("✅ Milestone marked as completed!", icon="🎉")
+                        st.session_state['milestone_action_feedback'] = ("success", "✅ **Milestone marked as completed!**")
                         st.rerun()
                 else:
                     if st.button("Mark In-Progress", key=f"mark_inprog_{n_id}_{idx}", type="secondary"):
                         api_update_note(n_id, {"milestone_status": "IN_PROGRESS"})
+                        st.toast("🚀 Milestone marked as in progress.", icon="ℹ️")
+                        st.session_state['milestone_action_feedback'] = ("info", "🚀 **Milestone marked as in progress.**")
                         st.rerun()
             with act_col2:
                 if st.button("✏️ Edit", key=f"toggle_edit_note_{n_id}_{idx}"):
@@ -3321,6 +3339,8 @@ def render_mentor_milestones_tab(mentor, history):
             with act_col3:
                 if st.button("🗑️ Delete", key=f"del_note_{n_id}_{idx}"):
                     api_delete_note(n_id)
+                    st.toast("🗑️ Session note deleted.", icon="🗑️")
+                    st.session_state['milestone_action_feedback'] = ("info", "🗑️ **Session note has been deleted.**")
                     st.rerun()
                     
             if st.session_state.get(f"show_edit_note_{n_id}"):
@@ -3341,6 +3361,8 @@ def render_mentor_milestones_tab(mentor, history):
                             "key_takeaways": e_takeaways,
                             "next_meeting_date": e_next
                         })
+                        st.toast("💾 Session note updated successfully!", icon="✅")
+                        st.session_state['milestone_action_feedback'] = ("success", "💾 **Session note updated successfully!**")
                         st.session_state[f"show_edit_note_{n_id}"] = False
                         st.rerun()
 
@@ -6132,6 +6154,9 @@ else:
                 "Nominate talented colleagues, senior engineers, or researchers from your network to join Mentoring-Me as mentors."
             )
 
+            if 'nominate_feedback' in st.session_state and st.session_state['nominate_feedback']:
+                st.success(st.session_state.pop('nominate_feedback'))
+
             # ── Section 1: Nomination Form ────────────────────────────────────
             st.markdown("### ✉️ Invite a Colleague")
             with st.form("colleague_nomination_form", clear_on_submit=True):
@@ -6157,7 +6182,8 @@ else:
                         ok, res = api_nominate_mentor(colleague_name.strip(), colleague_email.strip(), colleague_focus.strip())
                         if ok:
                             st.session_state['latest_colleague_nomination'] = res
-                            st.success(f"✅ Invitation created for {colleague_name}! See the email designer below.")
+                            st.toast(f"✅ Invitation created for {colleague_name}!", icon="🎉")
+                            st.session_state['nominate_feedback'] = f"✅ **Invitation created for {colleague_name}!** See the email designer below to customize and send the invite."
                             st.rerun()
                         else:
                             st.error(res)

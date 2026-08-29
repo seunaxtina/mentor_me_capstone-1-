@@ -662,13 +662,19 @@ def display_match_compatibility_report(m: dict, partner_name: str = None, is_men
         st.markdown(f"<div style='text-align:right; font-weight:700; font-size:1.05rem; color:#1e293b; padding-top:6px;'>{pract_pct}%</div>", unsafe_allow_html=True)
 
 
-st.set_page_config(page_title="Mentoring-Me — Secure Matching Platform", layout="wide")
+st.set_page_config(page_title="Mentoring-Me — Empowering Women in Technical Careers", layout="wide")
 
-st.title("🤝 Mentoring-Me — Secure Matching Platform")
+st.title("👩‍💻 Mentoring-Me — Empowering Women in Technical Careers")
 st.caption(
-    "A secure, database-backed mentoring matches platform. "
-    "Sign up or log in to manage your profile and view matches."
+    "Dedicated to advancing and connecting women across technical disciplines with experienced leaders, mentors, and active Diversity & Inclusion allies."
 )
+st.markdown("""
+<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: -6px; margin-bottom: 20px;">
+    <span style="background: #f1f5f9; color: #334155; padding: 4px 12px; border-radius: 16px; font-size: 0.82rem; font-weight: 600; border: 1px solid #e2e8f0;">👩‍💻 Elevating Women in Technical Roles</span>
+    <span style="background: #f1f5f9; color: #334155; padding: 4px 12px; border-radius: 16px; font-size: 0.82rem; font-weight: 600; border: 1px solid #e2e8f0;">📈 Career Acceleration & Sponsorship</span>
+    <span style="background: #f1f5f9; color: #334155; padding: 4px 12px; border-radius: 16px; font-size: 0.82rem; font-weight: 600; border: 1px solid #e2e8f0;">🤝 Diversity & Inclusion Allies</span>
+</div>
+""", unsafe_allow_html=True)
 
 # Session State Initialization & Auto-Restoration on Page Refresh
 if 'access_token' not in st.session_state:
@@ -3663,8 +3669,8 @@ if st.session_state['access_token'] is None:
     else:
         st.markdown("""
             <div style="margin-bottom: 22px;">
-                <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">Welcome to Mentoring-Me</h2>
-                <p style="margin: 0; color: #64748b; font-size: 0.95rem;">Empowering equitable mentorship and career acceleration.</p>
+                <h2 style="margin: 0 0 6px 0; font-weight: 700; color: #0f172a; font-size: 1.85rem;">🚀 Welcome to Mentoring-Me</h2>
+                <p style="margin: 0; color: #64748b; font-size: 0.95rem; line-height: 1.5;">A dedicated mentorship community designed to support women navigating technical career milestones, foster psychological safety, and build pathways to senior leadership.</p>
             </div>
         """, unsafe_allow_html=True)
         tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Create Account"])
@@ -3834,6 +3840,9 @@ else:
     if st.sidebar.button("🚪 Log Out"):
         clear_auth_session()
         st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.caption("👩‍💻 **Mentoring-Me**\n\nAdvancing and connecting women across technical disciplines with leaders & allies.")
         
     if role == "MENTEE":
         mentee = profile['mentee']

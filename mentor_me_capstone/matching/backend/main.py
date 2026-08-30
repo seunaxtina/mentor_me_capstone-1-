@@ -1,3 +1,7 @@
+"""
+Mentoring-Me Platform API Backend
+Empowering Women in Technical Careers with AI Matching, Messaging & Analytics
+"""
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm

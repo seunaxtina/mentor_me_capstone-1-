@@ -1,3 +1,7 @@
+"""
+Mentoring-Me Platform Streamlit Frontend
+Advancing and connecting women across technical disciplines with leaders & allies.
+"""
 import sys
 import os
 import json

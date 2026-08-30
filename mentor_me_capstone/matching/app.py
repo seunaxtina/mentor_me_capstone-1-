@@ -2213,16 +2213,7 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
                     else:
                         st.write("")
 
-                # Quick breadcrumb return button to matches
-                target_tab_name = "Platform Matches" if current_role == "MENTEE" else "Mentorship Requests"
-                btn_text = "🎯 ← Return to Matches & Scheduling" if current_role == "MENTEE" else "🎯 ← Return to Requests & Capacity"
-                c_ret1, c_ret2 = st.columns([2.2, 3.8])
-                with c_ret1:
-                    if st.button(btn_text, key=f"chat_ret_btn_{curr_match['id']}", use_container_width=True):
-                        st.session_state['trigger_tab_switch'] = target_tab_name
-                        st.rerun()
-                with c_ret2:
-                    st.caption("💡 *Tip*: Use **📅 Sync Meeting** above to add confirmed sessions to Google Calendar or download an `.ics` file.")
+                st.caption("💡 *Tip*: Use **📅 Sync Meeting** in the header above to add confirmed sessions to Google Calendar or download an `.ics` file.")
 
                 st.markdown("---")
                 render_active_chat_stream(curr_match['id'], partner_name, current_role)
@@ -4134,32 +4125,36 @@ else:
                     end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                 )
 
+                if st.session_state.get('sched_sent_success_msg'):
+                    st.success(f"✅ **{st.session_state['sched_sent_success_msg']}**")
+
                 st.markdown("**Choose Your Communication Channel & Calendar Sync:**")
                 coord_col1, coord_col2, coord_col3, coord_col4 = st.columns(4)
                 with coord_col1:
-                    if st.button("🚀 Send Note & Open Chat", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
+                    if st.button("🚀 Send Direct Message", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
                         ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
                         if ok_s:
                             api_mark_match_notified(f_match_id)
-                            del st.session_state['focus_scheduling_match']
-                            st.session_state['active_chat_match_id'] = f_match_id
-                            st.session_state['trigger_tab_switch'] = "Direct Messages"
-                            st.session_state['profile'] = None
+                            st.session_state['sched_sent_success_msg'] = f"Message sent & notification email dispatched to {f_match['mentor_name']}!"
+                            st.toast(f"📤 Message sent & notification email dispatched to {f_match['mentor_name']}!", icon="✅")
                             st.rerun()
                         else:
                             st.error(res_s)
                 with coord_col2:
-                    if st.button(f"✉️ Send Email", key=f"focus_send_email_{f_match_id}", use_container_width=True):
+                    if st.button("✉️ Send via Email", key=f"focus_send_email_{f_match_id}", use_container_width=True):
                         ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, edited_intro_msg)
                         if ok_e:
-                            st.success(f"✅ {msg_e}")
+                            api_mark_match_notified(f_match_id)
+                            st.session_state['sched_sent_success_msg'] = f"Direct email successfully sent to {f_match['mentor_name']}!"
+                            st.toast(f"✉️ Email sent to {f_match['mentor_name']}!", icon="✅")
+                            st.rerun()
                         else:
                             st.error(msg_e)
                 with coord_col3:
-                    st.link_button("📅 Google Calendar", f_gcal_url, use_container_width=True)
+                    st.link_button("📅 Add to Google Calendar", f_gcal_url, use_container_width=True)
                 with coord_col4:
                     st.download_button(
-                        "📥 .ICS Invite",
+                        "📥 Download .ICS Invite",
                         data=f_ics_bytes,
                         file_name=f"mentor_me_sync_{f_match['mentor_name'].replace(' ', '_')}.ics",
                         mime="text/calendar",
@@ -4167,11 +4162,28 @@ else:
                         key=f"download_ics_focus_{f_match_id}"
                     )
                 
-                if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
-                    api_mark_match_notified(f_match_id)
-                    del st.session_state['focus_scheduling_match']
-                    st.session_state['profile'] = None
-                    st.rerun()
+                st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+                nav_c1, nav_c2 = st.columns([1, 1])
+                with nav_c1:
+                    if st.button("💬 Go to Direct Messages", key=f"focus_open_chat_btn_{f_match_id}", use_container_width=True):
+                        if 'sched_sent_success_msg' in st.session_state:
+                            del st.session_state['sched_sent_success_msg']
+                        del st.session_state['focus_scheduling_match']
+                        st.session_state['active_chat_match_id'] = f_match_id
+                        st.session_state['trigger_tab_switch'] = "Direct Messages"
+                        st.session_state['profile'] = None
+                        st.rerun()
+                with nav_c2:
+                    is_sent = bool(st.session_state.get('sched_sent_success_msg'))
+                    btn_label = "✅ Done (Return to Platform Matches)" if is_sent else "⬅️ Close & Return to Dashboard"
+                    btn_type = "primary" if is_sent else "secondary"
+                    if st.button(btn_label, key="close_focus_scheduling", type=btn_type, use_container_width=True):
+                        api_mark_match_notified(f_match_id)
+                        if 'sched_sent_success_msg' in st.session_state:
+                            del st.session_state['sched_sent_success_msg']
+                        del st.session_state['focus_scheduling_match']
+                        st.session_state['profile'] = None
+                        st.rerun()
                 st.markdown("---")
                 st.stop()
                 

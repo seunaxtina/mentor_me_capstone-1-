@@ -1286,11 +1286,16 @@ def api_mark_match_notified(match_id):
         return False
 
 def api_get_match_history():
+    if not st.session_state.get('access_token'):
+        return []
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
         response = api_http.get(f"{API_URL}/matches/history", headers=headers)
         if response.status_code == 200:
-            return response.json()
+            res = response.json()
+            if isinstance(res, list):
+                return [m for m in res if isinstance(m, dict)]
+            return []
         return []
     except Exception as e:
         st.error(f"API Connection Error: {e}")
@@ -2399,13 +2404,15 @@ def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key
 def render_top_notifications_bell(current_role: str):
     st.write("")
     st.write("")
-    history = api_get_match_history() or []
-    unread_msg_summary = api_get_unread_messages() or {}
-    tot_unread_msgs = unread_msg_summary.get('total_unread', 0)
-    unread_by_match = unread_msg_summary.get('by_match', {})
+    raw_history = api_get_match_history()
+    history = [m for m in raw_history if isinstance(m, dict)] if isinstance(raw_history, list) else []
+    
+    unread_msg_summary = api_get_unread_messages()
+    tot_unread_msgs = int(unread_msg_summary.get('total_unread', 0)) if isinstance(unread_msg_summary, dict) else 0
+    unread_by_match = unread_msg_summary.get('by_match', {}) if isinstance(unread_msg_summary, dict) else {}
     
     if current_role == "MENTEE":
-        unnotified = [m for m in history if m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
+        unnotified = [m for m in history if isinstance(m, dict) and m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
         total_alerts = len(unnotified) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
         
@@ -2460,7 +2467,7 @@ def render_top_notifications_bell(current_role: str):
                                     st.session_state['profile'] = None
                                     st.rerun(scope="fragment")
     else:  # MENTOR
-        unnotified_reqs = [m for m in history if m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
+        unnotified_reqs = [m for m in history if isinstance(m, dict) and m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
         total_alerts = len(unnotified_reqs) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
         
@@ -4225,7 +4232,7 @@ else:
                 st.markdown("---")
                 st.stop()
                 
-        unnotified = [m for m in history if m['status'] == 'ACCEPTED' and not m.get('mentee_notified', False)]
+        unnotified = [m for m in history if isinstance(m, dict) and m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
         unread_count = len(unnotified)
         
         col_greet, col_bell = st.columns([8, 2])
@@ -5648,7 +5655,7 @@ else:
                 st.markdown("---")
                 st.stop()
                 
-        unnotified_reqs = [m for m in history if m['status'] == 'REQUESTED' and not m.get('mentor_notified', False)]
+        unnotified_reqs = [m for m in history if isinstance(m, dict) and m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
         unread_count = len(unnotified_reqs)
         
         col_greet, col_bell = st.columns([8, 2])

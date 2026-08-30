@@ -2042,6 +2042,7 @@ def render_active_chat_stream(match_id: str, partner_name: str, current_role: st
             if btn_sub and inp_text.strip():
                 ok_s, res_s = api_send_message(match_id, inp_text.strip())
                 if ok_s:
+                    st.toast(f"📤 Message sent & email notification dispatched to {partner_name}!", icon="✅")
                     st.rerun(scope="fragment")
                 else:
                     st.error(res_s)
@@ -2368,6 +2369,7 @@ def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key
             if send_btn and msg_text.strip():
                 ok_s, res_s = api_send_message(match_id, msg_text.strip())
                 if ok_s:
+                    st.toast(f"📤 Message sent & email notification dispatched to {partner_name}!", icon="✅")
                     st.rerun()
                 else:
                     st.error(res_s)
@@ -2385,6 +2387,14 @@ def render_top_notifications_bell(current_role: str):
         unnotified = [m for m in history if m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
         total_alerts = len(unnotified) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
+        
+        last_tot = st.session_state.get('_last_tot_alerts_mentee', None)
+        if last_tot is not None and total_alerts > last_tot:
+            if tot_unread_msgs > 0:
+                st.toast(f"💬 New direct message received! ({tot_unread_msgs} unread)", icon="🔔")
+            elif unnotified:
+                st.toast("🎉 A mentor accepted your mentorship request!", icon="🔔")
+        st.session_state['_last_tot_alerts_mentee'] = total_alerts
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])
@@ -2431,6 +2441,14 @@ def render_top_notifications_bell(current_role: str):
         unnotified_reqs = [m for m in history if m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
         total_alerts = len(unnotified_reqs) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
+        
+        last_tot_m = st.session_state.get('_last_tot_alerts_mentor', None)
+        if last_tot_m is not None and total_alerts > last_tot_m:
+            if tot_unread_msgs > 0:
+                st.toast(f"💬 New direct message received! ({tot_unread_msgs} unread)", icon="🔔")
+            elif unnotified_reqs:
+                st.toast("📩 New mentorship request received! Check Notifications.", icon="🔔")
+        st.session_state['_last_tot_alerts_mentor'] = total_alerts
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])

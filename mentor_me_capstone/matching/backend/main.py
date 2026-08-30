@@ -2445,6 +2445,80 @@ def send_match_message(
     elif current_user.role == "MENTOR" and current_user.mentor_profile and current_user.mentor_profile.name:
         s_name = current_user.mentor_profile.name
 
+    # Dispatch instant email notification to recipient
+    recipient_user = db.query(models.User).filter(models.User.id == recipient_id).first()
+    if recipient_user and recipient_user.email:
+        r_name = recipient_user.email.split("@")[0]
+        if recipient_user.role == "MENTEE" and recipient_user.mentee_profile and recipient_user.mentee_profile.name:
+            r_name = recipient_user.mentee_profile.name
+        elif recipient_user.role == "MENTOR" and recipient_user.mentor_profile and recipient_user.mentor_profile.name:
+            r_name = recipient_user.mentor_profile.name
+            
+        frontend_base = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or "http://localhost:8501"
+        email_subject = f"💬 New message from {s_name} (Mentoring-Me)"
+        
+        email_body_text = (
+            f"Hello {r_name},\n\n"
+            f"You have received a new direct message from {s_name} on the Mentoring-Me platform:\n\n"
+            f"--------------------------------------------------\n"
+            f"{req.content.strip()}\n"
+            f"--------------------------------------------------\n\n"
+            f"To read the conversation and reply, please visit your Mentoring-Me dashboard:\n"
+            f"{frontend_base}\n\n"
+            f"You can also reply directly to this email to get in touch with {s_name}.\n\n"
+            f"Best regards,\n"
+            f"The Mentoring-Me Platform"
+        )
+        
+        email_body_html = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #0284c7; margin: 0; font-size: 22px;">👩‍💻 Mentoring-Me</h2>
+                <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Empowering Women in Technical Careers</p>
+            </div>
+            
+            <p style="font-size: 16px; color: #1e293b; margin-bottom: 12px;">Hello <strong>{r_name}</strong>,</p>
+            <p style="font-size: 15px; color: #334155; margin-bottom: 16px;"><strong>{s_name}</strong> sent you a new direct message regarding your mentorship collaboration:</p>
+            
+            <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 14px 18px; margin: 18px 0; border-radius: 6px; font-size: 15px; color: #1e293b; line-height: 1.6; white-space: pre-wrap;">{req.content.strip()}</div>
+            
+            <div style="text-align: center; margin: 26px 0;">
+                <a href="{frontend_base}" style="background-color: #0284c7; color: #ffffff; padding: 12px 26px; font-size: 15px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block;">👉 Open Mentoring-Me & Reply</a>
+            </div>
+            
+            <p style="font-size: 13px; color: #64748b; line-height: 1.5; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 25px;">
+                💡 <em>Tip: You can also hit <strong>Reply</strong> directly in your email client to reply to {s_name} ({current_user.email}).</em><br>
+                Mentoring-Me Platform &copy; 2026
+            </p>
+        </div>
+        """
+        
+        import threading
+        def _async_send_chat_email():
+            try:
+                auth.send_email_notification(
+                    to_email=recipient_user.email,
+                    subject=email_subject,
+                    body_text=email_body_text,
+                    body_html=email_body_html,
+                    reply_to=current_user.email
+                )
+            except Exception as ex:
+                print(f"[CHAT EMAIL NOTICE] Async dispatch error to {recipient_user.email}: {ex}")
+                
+            try:
+                os.makedirs("uploads", exist_ok=True)
+                log_path = f"uploads/email_chat_msg_{new_msg.id}.txt"
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.write(f"TO: {recipient_user.email}\n")
+                    f.write(f"REPLY-TO: {current_user.email}\n")
+                    f.write(f"SUBJECT: {email_subject}\n")
+                    f.write(f"BODY:\n{email_body_text}\n")
+            except Exception:
+                pass
+                
+        threading.Thread(target=_async_send_chat_email, daemon=True).start()
+
     return schemas.MessageResponse(
         id=new_msg.id,
         match_id=new_msg.match_id,

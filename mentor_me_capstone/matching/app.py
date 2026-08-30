@@ -61,7 +61,18 @@ try:
     if hasattr(st, "secrets"):
         for key, value in st.secrets.items():
             if isinstance(value, (str, int, float, bool)):
-                os.environ[key] = str(value)
+                clean_val = str(value).strip().strip('"').strip("'")
+                os.environ[key] = clean_val
+                os.environ[key.upper()] = clean_val
+            elif isinstance(value, dict) or hasattr(value, "items"):
+                for sub_k, sub_v in value.items():
+                    if isinstance(sub_v, (str, int, float, bool)):
+                        clean_sub_v = str(sub_v).strip().strip('"').strip("'")
+                        os.environ[f"{key.upper()}_{sub_k.upper()}"] = clean_sub_v
+                        if key.lower() == "google" and sub_k.lower() in ("client_id", "id"):
+                            os.environ["GOOGLE_CLIENT_ID"] = clean_sub_v
+                        if key.lower() == "google" and sub_k.lower() in ("client_secret", "secret"):
+                            os.environ["GOOGLE_CLIENT_SECRET"] = clean_sub_v
 except Exception:
     pass
 
@@ -931,10 +942,42 @@ def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", i
             params["invite_code"] = invite_code
         response = api_http.get(f"{API_URL}/auth/sso/authorize-url", params=params)
         if response.status_code == 200:
-            return response.json().get("auth_url")
-        return None
+            auth_url = response.json().get("auth_url")
+            if auth_url:
+                return auth_url
     except Exception:
-        return None
+        pass
+
+    # Streamlit Cloud secrets / environment direct fallback
+    if provider.lower() == "google":
+        g_cid = None
+        if hasattr(st, "secrets"):
+            if "GOOGLE_CLIENT_ID" in st.secrets:
+                g_cid = str(st.secrets["GOOGLE_CLIENT_ID"])
+            elif "google" in st.secrets and isinstance(st.secrets["google"], dict):
+                g_cid = str(st.secrets["google"].get("client_id") or st.secrets["google"].get("GOOGLE_CLIENT_ID") or "")
+            elif "oauth" in st.secrets and isinstance(st.secrets["oauth"], dict):
+                g_cid = str(st.secrets["oauth"].get("google_client_id") or st.secrets["oauth"].get("GOOGLE_CLIENT_ID") or "")
+        if not g_cid:
+            g_cid = os.getenv("GOOGLE_CLIENT_ID", "")
+            
+        if g_cid:
+            g_cid = str(g_cid).strip().strip('"').strip("'")
+            if g_cid and "your_" not in g_cid:
+                import urllib.parse
+                frontend_base = get_frontend_base_url().rstrip("/")
+                g_params = {
+                    "client_id": g_cid,
+                    "redirect_uri": frontend_base,
+                    "response_type": "code",
+                    "scope": "openid email profile",
+                    "access_type": "offline",
+                    "prompt": "select_account",
+                    "state": f"provider=google&role={role}&mode={mode}" + (f"&invite={invite_code}" if invite_code else "")
+                }
+                return f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(g_params)}"
+                
+    return None
 
 def api_signup(email, password, role, invite_code=None):
     try:

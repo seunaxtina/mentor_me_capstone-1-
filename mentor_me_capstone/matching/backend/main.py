@@ -987,13 +987,13 @@ def get_sso_authorize_url(provider: str, redirect_uri: str = None, role: str = "
         redirect_uri = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or "http://localhost:8501"
     redirect_uri = redirect_uri.rstrip("/")
     provider = provider.lower().strip()
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
-    facebook_app_id = os.getenv("FACEBOOK_APP_ID")
+    google_client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip().strip('"').strip("'")
+    facebook_app_id = (os.getenv("FACEBOOK_APP_ID") or "").strip().strip('"').strip("'")
     
     if provider == "google":
         if google_client_id and "your_" not in google_client_id:
             params = {
-                "client_id": google_client_id.strip(),
+                "client_id": google_client_id,
                 "redirect_uri": redirect_uri,
                 "response_type": "code",
                 "scope": "openid email profile",
@@ -1012,7 +1012,7 @@ def get_sso_authorize_url(provider: str, redirect_uri: str = None, role: str = "
     elif provider == "facebook":
         if facebook_app_id and "your_" not in facebook_app_id:
             params = {
-                "client_id": facebook_app_id.strip(),
+                "client_id": facebook_app_id,
                 "redirect_uri": redirect_uri,
                 "scope": "email,public_profile",
                 "state": f"provider=facebook&role={role}&mode={mode}" + (f"&invite={invite_code}" if invite_code else "")
@@ -1031,10 +1031,10 @@ def get_sso_authorize_url(provider: str, redirect_uri: str = None, role: str = "
 def sso_callback(req: schemas.SSOCallbackRequest, db: Session = Depends(get_db)):
     load_dotenv()
     provider = req.provider.lower().strip()
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
-    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    facebook_app_id = os.getenv("FACEBOOK_APP_ID")
-    facebook_app_secret = os.getenv("FACEBOOK_APP_SECRET")
+    google_client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip().strip('"').strip("'")
+    google_client_secret = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip().strip('"').strip("'")
+    facebook_app_id = (os.getenv("FACEBOOK_APP_ID") or "").strip().strip('"').strip("'")
+    facebook_app_secret = (os.getenv("FACEBOOK_APP_SECRET") or "").strip().strip('"').strip("'")
     
     redirect_uri = (req.redirect_uri or os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL") or "http://localhost:8501").rstrip("/")
     
@@ -1048,8 +1048,8 @@ def sso_callback(req: schemas.SSOCallbackRequest, db: Session = Depends(get_db))
             import requests as _req
             token_resp = _req.post("https://oauth2.googleapis.com/token", data={
                 "code": req.code,
-                "client_id": google_client_id.strip() if google_client_id else "",
-                "client_secret": google_client_secret.strip() if google_client_secret else "",
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code"
             }, verify=False, timeout=10)

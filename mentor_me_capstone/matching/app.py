@@ -1,3 +1,7 @@
+"""
+Mentoring-Me Platform Streamlit Frontend
+Advancing and connecting women across technical disciplines with leaders & allies.
+"""
 import sys
 import os
 import json
@@ -875,6 +879,21 @@ def api_toggle_2fa(enabled: bool):
         return False, response.json().get("detail", "Failed to update 2FA.")
     except Exception as e:
         return False, f"API Error: {e}"
+
+def api_delete_my_account():
+    if not st.session_state.get('access_token'):
+        return False, "Not authenticated"
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.delete(f"{API_URL}/users/me", headers=headers)
+        if response.status_code == 200:
+            msg = response.json().get("message", "Your account and all associated data have been permanently deleted.")
+            clear_auth_session()
+            return True, msg
+        detail = response.json().get("detail", "Failed to delete account.")
+        return False, detail
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
 
 def api_sso_authenticate(provider: str, email: str, name: str = None, picture: str = None, oauth_id: str = None, role: str = "MENTEE", invite_code: str = None, token_or_code: str = None):
     try:
@@ -2042,6 +2061,7 @@ def render_active_chat_stream(match_id: str, partner_name: str, current_role: st
             if btn_sub and inp_text.strip():
                 ok_s, res_s = api_send_message(match_id, inp_text.strip())
                 if ok_s:
+                    st.toast(f"📤 Message sent to {partner_name}!", icon="💬")
                     st.rerun(scope="fragment")
                 else:
                     st.error(res_s)
@@ -2212,41 +2232,104 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
                     else:
                         st.write("")
 
-                # Quick breadcrumb return button to matches
-                target_tab_name = "Platform Matches" if current_role == "MENTEE" else "Mentorship Requests"
-                btn_text = "🎯 ← Return to Matches & Scheduling" if current_role == "MENTEE" else "🎯 ← Return to Requests & Capacity"
-                c_ret1, c_ret2 = st.columns([2.2, 3.8])
-                with c_ret1:
-                    if st.button(btn_text, key=f"chat_ret_btn_{curr_match['id']}", use_container_width=True):
-                        st.session_state['trigger_tab_switch'] = target_tab_name
-                        st.rerun()
-                with c_ret2:
-                    st.caption("💡 *Tip*: Use **📅 Sync Meeting** above to add confirmed sessions to Google Calendar or download an `.ics` file.")
+                st.caption("💡 *Tip*: Use **📅 Sync Meeting** in the header above to add confirmed sessions to Google Calendar or download an `.ics` file.")
 
                 st.markdown("---")
                 render_active_chat_stream(curr_match['id'], partner_name, current_role)
 
 def trigger_client_tab_switch(target_tab_keyword: str):
-    """Programmatically switches the Streamlit client tab using DOM trigger."""
+    """Programmatically switches the Streamlit client tab using robust multi-selector DOM triggers."""
     import streamlit.components.v1 as components
+    import json
+    
+    clean_keyword = target_tab_keyword.strip()
     js_code = f"""
     <script>
-        function doSwitch() {{
-            try {{
-                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                for (let tab of tabs) {{
-                    if (tab.innerText && tab.innerText.toLowerCase().includes("{target_tab_keyword.lower()}")) {{
-                        tab.click();
-                        return true;
+        (function() {{
+            const targetKeyword = {json.dumps(clean_keyword)}.toLowerCase();
+            const keywords = targetKeyword.split(/\\s+/).filter(w => w.length > 2);
+            
+            function simulateClick(el) {{
+                try {{
+                    el.focus();
+                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function(eventType) {{
+                        const ev = new MouseEvent(eventType, {{
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        }});
+                        el.dispatchEvent(ev);
+                    }});
+                    if (typeof el.click === 'function') {{
+                        el.click();
                     }}
+                }} catch(e) {{
+                    try {{ el.click(); }} catch(err) {{}}
                 }}
-            }} catch(e) {{}}
-            return false;
-        }}
-        if (!doSwitch()) {{
-            setTimeout(doSwitch, 100);
-            setTimeout(doSwitch, 350);
-        }}
+            }}
+            
+            function doSwitch() {{
+                try {{
+                    const docs = [];
+                    if (window.parent && window.parent.document) docs.push(window.parent.document);
+                    if (window.top && window.top.document && window.top.document !== (window.parent && window.parent.document)) docs.push(window.top.document);
+                    docs.push(document);
+                    
+                    const selectors = [
+                        'div[data-testid="stTabs"] button[data-testid="stTab"]',
+                        'div[data-testid="stTabs"] button[role="tab"]',
+                        'button[data-testid="stTab"]',
+                        'button[role="tab"]',
+                        'button[data-baseweb="tab"]',
+                        'div[data-baseweb="tab-list"] button',
+                        '[data-testid="stTab"]',
+                        '[role="tab"]'
+                    ];
+                    
+                    for (let doc of docs) {{
+                        let tabs = [];
+                        for (let sel of selectors) {{
+                            const found = doc.querySelectorAll(sel);
+                            if (found && found.length > 0) {{
+                                tabs = Array.from(found);
+                                break;
+                            }}
+                        }}
+                        
+                        if (tabs.length === 0) continue;
+                        
+                        // 1. Direct / full text substring matching
+                        for (let tab of tabs) {{
+                            const text = (tab.textContent || tab.innerText || "").toLowerCase().trim();
+                            if (text.includes(targetKeyword)) {{
+                                simulateClick(tab);
+                                return true;
+                            }}
+                        }}
+                        
+                        // 2. Keyword fallback matching (e.g. 'matches', 'requests', 'messages')
+                        for (let tab of tabs) {{
+                            const text = (tab.textContent || tab.innerText || "").toLowerCase().trim();
+                            for (let kw of keywords) {{
+                                if (text.includes(kw)) {{
+                                    simulateClick(tab);
+                                    return true;
+                                }}
+                            }}
+                        }}
+                    }}
+                }} catch(e) {{
+                    console.error("Tab switch trigger error:", e);
+                }}
+                return false;
+            }}
+            
+            // Staged execution retries
+            const delays = [10, 40, 100, 220, 450, 800, 1200];
+            delays.forEach(function(delay) {{
+                setTimeout(doSwitch, delay);
+            }});
+        }})();
     </script>
     """
     components.html(js_code, height=0, width=0)
@@ -2296,6 +2379,7 @@ def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key
             if send_btn and msg_text.strip():
                 ok_s, res_s = api_send_message(match_id, msg_text.strip())
                 if ok_s:
+                    st.toast(f"📤 Message sent to {partner_name}!", icon="💬")
                     st.rerun()
                 else:
                     st.error(res_s)
@@ -2313,6 +2397,14 @@ def render_top_notifications_bell(current_role: str):
         unnotified = [m for m in history if m.get('status') == 'ACCEPTED' and not m.get('mentee_notified', False)]
         total_alerts = len(unnotified) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
+        
+        last_tot = st.session_state.get('_last_tot_alerts_mentee', None)
+        if last_tot is not None and total_alerts > last_tot:
+            if tot_unread_msgs > 0:
+                st.toast(f"💬 New direct message received! ({tot_unread_msgs} unread)", icon="🔔")
+            elif unnotified:
+                st.toast("🎉 A mentor accepted your mentorship request!", icon="🔔")
+        st.session_state['_last_tot_alerts_mentee'] = total_alerts
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])
@@ -2359,6 +2451,14 @@ def render_top_notifications_bell(current_role: str):
         unnotified_reqs = [m for m in history if m.get('status') == 'REQUESTED' and not m.get('mentor_notified', False)]
         total_alerts = len(unnotified_reqs) + tot_unread_msgs
         bell_label = f"🔔 ({total_alerts})" if total_alerts > 0 else "🔔"
+        
+        last_tot_m = st.session_state.get('_last_tot_alerts_mentor', None)
+        if last_tot_m is not None and total_alerts > last_tot_m:
+            if tot_unread_msgs > 0:
+                st.toast(f"💬 New direct message received! ({tot_unread_msgs} unread)", icon="🔔")
+            elif unnotified_reqs:
+                st.toast("📩 New mentorship request received! Check Notifications.", icon="🔔")
+        st.session_state['_last_tot_alerts_mentor'] = total_alerts
         
         with st.popover(bell_label, use_container_width=True):
             head_col1, head_col2 = st.columns([2, 1])
@@ -3691,6 +3791,12 @@ def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix=
 
 # Application Views
 if st.session_state['access_token'] is None:
+    if st.session_state.get('account_deleted_banner'):
+        st.success(f"🗑️ **{st.session_state['account_deleted_banner']}**")
+        if st.button("Dismiss Notice", key="dismiss_acc_del_banner_btn"):
+            del st.session_state['account_deleted_banner']
+            st.rerun()
+
     if st.session_state.get('sso_success_msg'):
         st.success(f"{st.session_state['sso_success_msg']}")
         if st.button("Dismiss Message", key="dismiss_sso_success_btn"):
@@ -4044,32 +4150,36 @@ else:
                     end_dt=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2, hours=14, minutes=25)
                 )
 
+                if st.session_state.get('sched_sent_success_msg'):
+                    st.success(f"✅ **{st.session_state['sched_sent_success_msg']}**")
+
                 st.markdown("**Choose Your Communication Channel & Calendar Sync:**")
                 coord_col1, coord_col2, coord_col3, coord_col4 = st.columns(4)
                 with coord_col1:
-                    if st.button("🚀 Send Note & Open Chat", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
+                    if st.button("🚀 Send Direct Message", key=f"quick_send_coord_{f_match_id}", type="primary", use_container_width=True):
                         ok_s, res_s = api_send_message(f_match_id, edited_intro_msg)
                         if ok_s:
                             api_mark_match_notified(f_match_id)
-                            del st.session_state['focus_scheduling_match']
-                            st.session_state['active_chat_match_id'] = f_match_id
-                            st.session_state['trigger_tab_switch'] = "Direct Messages"
-                            st.session_state['profile'] = None
+                            st.session_state['sched_sent_success_msg'] = f"Message sent & notification email dispatched to {f_match['mentor_name']}!"
+                            st.toast(f"📤 Message sent & notification email dispatched to {f_match['mentor_name']}!", icon="✅")
                             st.rerun()
                         else:
                             st.error(res_s)
                 with coord_col2:
-                    if st.button(f"✉️ Send Email", key=f"focus_send_email_{f_match_id}", use_container_width=True):
+                    if st.button("✉️ Send via Email", key=f"focus_send_email_{f_match_id}", use_container_width=True):
                         ok_e, msg_e = api_send_direct_match_email(f_match_id, coordinate_subject, edited_intro_msg)
                         if ok_e:
-                            st.success(f"✅ {msg_e}")
+                            api_mark_match_notified(f_match_id)
+                            st.session_state['sched_sent_success_msg'] = f"Direct email successfully sent to {f_match['mentor_name']}!"
+                            st.toast(f"✉️ Email sent to {f_match['mentor_name']}!", icon="✅")
+                            st.rerun()
                         else:
                             st.error(msg_e)
                 with coord_col3:
-                    st.link_button("📅 Google Calendar", f_gcal_url, use_container_width=True)
+                    st.link_button("📅 Add to Google Calendar", f_gcal_url, use_container_width=True)
                 with coord_col4:
                     st.download_button(
-                        "📥 .ICS Invite",
+                        "📥 Download .ICS Invite",
                         data=f_ics_bytes,
                         file_name=f"mentor_me_sync_{f_match['mentor_name'].replace(' ', '_')}.ics",
                         mime="text/calendar",
@@ -4077,11 +4187,28 @@ else:
                         key=f"download_ics_focus_{f_match_id}"
                     )
                 
-                if st.button("✅ Done (Dismiss Notification & Return to Dashboard)", key="close_focus_scheduling"):
-                    api_mark_match_notified(f_match_id)
-                    del st.session_state['focus_scheduling_match']
-                    st.session_state['profile'] = None
-                    st.rerun()
+                st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+                nav_c1, nav_c2 = st.columns([1, 1])
+                with nav_c1:
+                    if st.button("💬 Go to Direct Messages", key=f"focus_open_chat_btn_{f_match_id}", use_container_width=True):
+                        if 'sched_sent_success_msg' in st.session_state:
+                            del st.session_state['sched_sent_success_msg']
+                        del st.session_state['focus_scheduling_match']
+                        st.session_state['active_chat_match_id'] = f_match_id
+                        st.session_state['trigger_tab_switch'] = "Direct Messages"
+                        st.session_state['profile'] = None
+                        st.rerun()
+                with nav_c2:
+                    is_sent = bool(st.session_state.get('sched_sent_success_msg'))
+                    btn_label = "✅ Done (Return to Platform Matches)" if is_sent else "⬅️ Close & Return to Dashboard"
+                    btn_type = "primary" if is_sent else "secondary"
+                    if st.button(btn_label, key="close_focus_scheduling", type=btn_type, use_container_width=True):
+                        api_mark_match_notified(f_match_id)
+                        if 'sched_sent_success_msg' in st.session_state:
+                            del st.session_state['sched_sent_success_msg']
+                        del st.session_state['focus_scheduling_match']
+                        st.session_state['profile'] = None
+                        st.rerun()
                 st.markdown("---")
                 st.stop()
                 
@@ -4317,6 +4444,24 @@ else:
                             st.rerun()
                         else:
                             st.error(t_msg)
+
+            with st.expander("⚠️ Danger Zone — Delete Account", expanded=False):
+                st.markdown("##### 🗑️ Permanent Account Deletion")
+                st.caption(
+                    "Permanently delete your account, mentee profile, uploaded CV, active mentorship connections, "
+                    "and all direct messages. This action is **permanent and irreversible** under GDPR Right to Erasure."
+                )
+                confirm_del_mentee = st.checkbox(
+                    "I understand that this action is permanent and cannot be undone.",
+                    key="confirm_del_mentee_check"
+                )
+                if st.button("🗑️ Permanently Delete My Account", key="btn_delete_own_mentee_acc", type="primary", disabled=not confirm_del_mentee):
+                    ok_del, msg_del = api_delete_my_account()
+                    if ok_del:
+                        st.session_state['account_deleted_banner'] = msg_del
+                        st.rerun()
+                    else:
+                        st.error(msg_del)
 
         if True:
             
@@ -5687,6 +5832,24 @@ else:
                             st.rerun()
                         else:
                             st.error(t_msg)
+
+            with st.expander("⚠️ Danger Zone — Delete Account", expanded=False):
+                st.markdown("##### 🗑️ Permanent Account Deletion")
+                st.caption(
+                    "Permanently delete your account, mentor profile, active mentorship connections, "
+                    "milestones, and all direct messages. This action is **permanent and irreversible** under GDPR Right to Erasure."
+                )
+                confirm_del_mentor = st.checkbox(
+                    "I understand that this action is permanent and cannot be undone.",
+                    key="confirm_del_mentor_check"
+                )
+                if st.button("🗑️ Permanently Delete My Account", key="btn_delete_own_mentor_acc", type="primary", disabled=not confirm_del_mentor):
+                    ok_del, msg_del = api_delete_my_account()
+                    if ok_del:
+                        st.session_state['account_deleted_banner'] = msg_del
+                        st.rerun()
+                    else:
+                        st.error(msg_del)
                             
         with tab_requests:
             import urllib.parse as _up_req

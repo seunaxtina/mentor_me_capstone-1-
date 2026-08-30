@@ -876,6 +876,21 @@ def api_toggle_2fa(enabled: bool):
     except Exception as e:
         return False, f"API Error: {e}"
 
+def api_delete_my_account():
+    if not st.session_state.get('access_token'):
+        return False, "Not authenticated"
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.delete(f"{API_URL}/users/me", headers=headers)
+        if response.status_code == 200:
+            msg = response.json().get("message", "Your account and all associated data have been permanently deleted.")
+            clear_auth_session()
+            return True, msg
+        detail = response.json().get("detail", "Failed to delete account.")
+        return False, detail
+    except Exception as e:
+        return False, f"API Connection Error: {e}"
+
 def api_sso_authenticate(provider: str, email: str, name: str = None, picture: str = None, oauth_id: str = None, role: str = "MENTEE", invite_code: str = None, token_or_code: str = None):
     try:
         payload = {
@@ -3772,6 +3787,12 @@ def render_sso_gateway_section(default_role="MENTEE", mode="signin", key_suffix=
 
 # Application Views
 if st.session_state['access_token'] is None:
+    if st.session_state.get('account_deleted_banner'):
+        st.success(f"🗑️ **{st.session_state['account_deleted_banner']}**")
+        if st.button("Dismiss Notice", key="dismiss_acc_del_banner_btn"):
+            del st.session_state['account_deleted_banner']
+            st.rerun()
+
     if st.session_state.get('sso_success_msg'):
         st.success(f"{st.session_state['sso_success_msg']}")
         if st.button("Dismiss Message", key="dismiss_sso_success_btn"):
@@ -4419,6 +4440,24 @@ else:
                             st.rerun()
                         else:
                             st.error(t_msg)
+
+            with st.expander("⚠️ Danger Zone — Delete Account", expanded=False):
+                st.markdown("##### 🗑️ Permanent Account Deletion")
+                st.caption(
+                    "Permanently delete your account, mentee profile, uploaded CV, active mentorship connections, "
+                    "and all direct messages. This action is **permanent and irreversible** under GDPR Right to Erasure."
+                )
+                confirm_del_mentee = st.checkbox(
+                    "I understand that this action is permanent and cannot be undone.",
+                    key="confirm_del_mentee_check"
+                )
+                if st.button("🗑️ Permanently Delete My Account", key="btn_delete_own_mentee_acc", type="primary", disabled=not confirm_del_mentee):
+                    ok_del, msg_del = api_delete_my_account()
+                    if ok_del:
+                        st.session_state['account_deleted_banner'] = msg_del
+                        st.rerun()
+                    else:
+                        st.error(msg_del)
 
         if True:
             
@@ -5789,6 +5828,24 @@ else:
                             st.rerun()
                         else:
                             st.error(t_msg)
+
+            with st.expander("⚠️ Danger Zone — Delete Account", expanded=False):
+                st.markdown("##### 🗑️ Permanent Account Deletion")
+                st.caption(
+                    "Permanently delete your account, mentor profile, active mentorship connections, "
+                    "milestones, and all direct messages. This action is **permanent and irreversible** under GDPR Right to Erasure."
+                )
+                confirm_del_mentor = st.checkbox(
+                    "I understand that this action is permanent and cannot be undone.",
+                    key="confirm_del_mentor_check"
+                )
+                if st.button("🗑️ Permanently Delete My Account", key="btn_delete_own_mentor_acc", type="primary", disabled=not confirm_del_mentor):
+                    ok_del, msg_del = api_delete_my_account()
+                    if ok_del:
+                        st.session_state['account_deleted_banner'] = msg_del
+                        st.rerun()
+                    else:
+                        st.error(msg_del)
                             
         with tab_requests:
             import urllib.parse as _up_req

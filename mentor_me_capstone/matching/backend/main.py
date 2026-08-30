@@ -1140,6 +1140,87 @@ def read_current_user_profile(current_user: models.User = Depends(auth.get_curre
         mentor=mentor_resp
     )
 
+@app.delete("/api/v1/users/me")
+def delete_own_account(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    user_id = current_user.id
+    target_email = current_user.email
+    
+    if current_user.role == "ADMIN":
+        admin_count = db.query(models.User).filter(models.User.role == "ADMIN").count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the sole administrator account.")
+            
+    # 1. Cascade delete all messages involving this user
+    db.query(models.Message).filter(
+        (models.Message.sender_id == user_id) | (models.Message.recipient_id == user_id)
+    ).delete(synchronize_session=False)
+    
+    # 2. Cascade delete all mentorship matches involving this user
+    db.query(models.Match).filter(
+        (models.Match.mentee_id == user_id) | (models.Match.mentor_id == user_id)
+    ).delete(synchronize_session=False)
+    
+    # 3. Cascade delete all mentorship session notes
+    try:
+        db.query(models.MentorshipNote).filter(
+            (models.MentorshipNote.mentee_id == user_id) | (models.MentorshipNote.mentor_id == user_id)
+        ).delete(synchronize_session=False)
+    except Exception:
+        pass
+        
+    # 4. Cascade delete external nominations
+    db.query(models.ExternalNomination).filter(
+        models.ExternalNomination.mentee_id == user_id
+    ).delete(synchronize_session=False)
+    
+    # 5. Cascade delete password reset tokens
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.user_id == user_id
+    ).delete(synchronize_session=False)
+    
+    # 6. Delete specific role profile & clean up stored files
+    if current_user.mentee_profile:
+        cv_path = getattr(current_user.mentee_profile, "cv_path", None)
+        if cv_path and os.path.exists(cv_path):
+            try:
+                os.remove(cv_path)
+            except Exception:
+                pass
+        pic_path = getattr(current_user.mentee_profile, "profile_pic", None)
+        if pic_path and os.path.exists(pic_path):
+            try:
+                os.remove(pic_path)
+            except Exception:
+                pass
+        db.delete(current_user.mentee_profile)
+        
+    if current_user.mentor_profile:
+        pic_path = getattr(current_user.mentor_profile, "profile_pic", None)
+        if pic_path and os.path.exists(pic_path):
+            try:
+                os.remove(pic_path)
+            except Exception:
+                pass
+        db.delete(current_user.mentor_profile)
+        
+    # 7. Delete user credential record
+    db.delete(current_user)
+    db.commit()
+
+    log_security_event(
+        db,
+        event_type="USER_SELF_DELETED",
+        user_email=target_email,
+        user_id=user_id,
+        status="WARNING",
+        details=f"User {target_email} permanently deleted their account and all data under GDPR Right to Erasure."
+    )
+    
+    return {"message": f"Your account ({target_email}) and all associated data have been permanently deleted."}
+
 @app.put("/api/v1/profile", response_model=schemas.UserProfileResponse)
 def update_profile(
     profile_updates: dict,

@@ -790,7 +790,7 @@ if "code" in st.query_params:
             "redirect_uri": frontend_base
         }
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
-        if resp.status_code == 200:
+        if resp.status_code in (200, 201):
             res_data = resp.json()
             if _mode == "signup":
                 # Registration Phase: Account successfully registered via Google/Facebook SSO
@@ -802,17 +802,20 @@ if "code" in st.query_params:
                 st.session_state['sso_error'] = None
             else:
                 # Sign In Phase: Enter dashboard directly
-                if isinstance(res_data, dict) and res_data.get('access_token'):
-                    token = res_data['access_token']
+                token = res_data.get('access_token') if isinstance(res_data, dict) else None
+                if token:
                     st.session_state['access_token'] = token
                     st.query_params["session_token"] = token
                     st.session_state['two_factor_challenge'] = None
                     st.session_state['sso_error'] = None
                     if 'sso_success_msg' in st.session_state:
                         del st.session_state['sso_success_msg']
-                    fetch_profile()
+                    prof = fetch_profile()
+                    if prof:
+                        st.session_state['profile'] = prof
                 else:
-                    st.session_state['sso_error'] = "Authentication token missing from response."
+                    err_hint = res_data.get('detail') if isinstance(res_data, dict) else str(res_data)
+                    st.session_state['sso_error'] = f"Google Sign-In Error: {err_hint or 'Invalid token response from server.'}"
         else:
             err_msg = "Google authentication failed."
             try:

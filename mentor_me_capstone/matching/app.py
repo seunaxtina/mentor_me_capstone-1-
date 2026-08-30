@@ -2227,26 +2227,98 @@ def render_messages_page(current_role: str, profile_data: dict, history: list = 
                 render_active_chat_stream(curr_match['id'], partner_name, current_role)
 
 def trigger_client_tab_switch(target_tab_keyword: str):
-    """Programmatically switches the Streamlit client tab using DOM trigger."""
+    """Programmatically switches the Streamlit client tab using robust multi-selector DOM triggers."""
     import streamlit.components.v1 as components
+    import json
+    
+    clean_keyword = target_tab_keyword.strip()
     js_code = f"""
     <script>
-        function doSwitch() {{
-            try {{
-                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                for (let tab of tabs) {{
-                    if (tab.innerText && tab.innerText.toLowerCase().includes("{target_tab_keyword.lower()}")) {{
-                        tab.click();
-                        return true;
+        (function() {{
+            const targetKeyword = {json.dumps(clean_keyword)}.toLowerCase();
+            const keywords = targetKeyword.split(/\\s+/).filter(w => w.length > 2);
+            
+            function simulateClick(el) {{
+                try {{
+                    el.focus();
+                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function(eventType) {{
+                        const ev = new MouseEvent(eventType, {{
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        }});
+                        el.dispatchEvent(ev);
+                    }});
+                    if (typeof el.click === 'function') {{
+                        el.click();
                     }}
+                }} catch(e) {{
+                    try {{ el.click(); }} catch(err) {{}}
                 }}
-            }} catch(e) {{}}
-            return false;
-        }}
-        if (!doSwitch()) {{
-            setTimeout(doSwitch, 100);
-            setTimeout(doSwitch, 350);
-        }}
+            }}
+            
+            function doSwitch() {{
+                try {{
+                    const docs = [];
+                    if (window.parent && window.parent.document) docs.push(window.parent.document);
+                    if (window.top && window.top.document && window.top.document !== (window.parent && window.parent.document)) docs.push(window.top.document);
+                    docs.push(document);
+                    
+                    const selectors = [
+                        'div[data-testid="stTabs"] button[data-testid="stTab"]',
+                        'div[data-testid="stTabs"] button[role="tab"]',
+                        'button[data-testid="stTab"]',
+                        'button[role="tab"]',
+                        'button[data-baseweb="tab"]',
+                        'div[data-baseweb="tab-list"] button',
+                        '[data-testid="stTab"]',
+                        '[role="tab"]'
+                    ];
+                    
+                    for (let doc of docs) {{
+                        let tabs = [];
+                        for (let sel of selectors) {{
+                            const found = doc.querySelectorAll(sel);
+                            if (found && found.length > 0) {{
+                                tabs = Array.from(found);
+                                break;
+                            }}
+                        }}
+                        
+                        if (tabs.length === 0) continue;
+                        
+                        // 1. Direct / full text substring matching
+                        for (let tab of tabs) {{
+                            const text = (tab.textContent || tab.innerText || "").toLowerCase().trim();
+                            if (text.includes(targetKeyword)) {{
+                                simulateClick(tab);
+                                return true;
+                            }}
+                        }}
+                        
+                        // 2. Keyword fallback matching (e.g. 'matches', 'requests', 'messages')
+                        for (let tab of tabs) {{
+                            const text = (tab.textContent || tab.innerText || "").toLowerCase().trim();
+                            for (let kw of keywords) {{
+                                if (text.includes(kw)) {{
+                                    simulateClick(tab);
+                                    return true;
+                                }}
+                            }}
+                        }}
+                    }}
+                }} catch(e) {{
+                    console.error("Tab switch trigger error:", e);
+                }}
+                return false;
+            }}
+            
+            // Staged execution retries
+            const delays = [10, 40, 100, 220, 450, 800, 1200];
+            delays.forEach(function(delay) {{
+                setTimeout(doSwitch, delay);
+            }});
+        }})();
     </script>
     """
     components.html(js_code, height=0, width=0)

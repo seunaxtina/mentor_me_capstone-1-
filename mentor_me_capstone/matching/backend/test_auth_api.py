@@ -139,6 +139,17 @@ def test_api():
     assert response.status_code == 403, f"FAIL: Role boundary check failed. Status {response.status_code}: {response.text}"
     print("PASS: API blocked mentor matching search with 403 Forbidden.")
         
+    # 11. Self-Service Account Deletion (GDPR Right to Erasure)
+    print("\n11. Testing self-service account deletion (DELETE /api/v1/users/me)...")
+    del_resp = client.delete(f"{API_URL}/users/me", headers=m_headers)
+    assert del_resp.status_code == 200, f"FAIL: Account deletion returned status {del_resp.status_code}: {del_resp.text}"
+    print("PASS: Account successfully deleted.")
+    
+    # Verify login fails after deletion
+    after_token, after_resp = get_token(mentor_email, "password123")
+    assert after_token is None, "FAIL: Deleted user was still able to authenticate."
+    print("PASS: Verified deleted account cannot log in.")
+        
     print("\n" + "="*60)
     print("ALL API END-TO-END SECURITY TESTS PASSED SUCCESSFULLY!")
     print("="*60)

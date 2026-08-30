@@ -15,12 +15,8 @@ import bcrypt
 
 logger = logging.getLogger(__name__)
 
-# Environment config secret — generate a random key per instance if not configured
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    import secrets as _secrets
-    SECRET_KEY = _secrets.token_hex(32)
-    logger.warning("SECRET_KEY not set in environment — using a random key. Sessions will NOT persist across restarts.")
+# Environment config secret — persistent default fallback for local dev/hot-reloads
+SECRET_KEY = os.getenv("SECRET_KEY") or "mentor_me_secure_jwt_secret_key_persistent_2026"
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60

@@ -690,27 +690,38 @@ def clear_auth_session():
     if "session_token" in st.query_params:
         del st.query_params["session_token"]
 
-def fetch_profile():
-    if not st.session_state.get('access_token'):
-        return
-    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
-    try:
-        response = api_http.get(f"{API_URL}/users/me", headers=headers)
-        if response.status_code == 200:
-            st.session_state['profile'] = response.json()
-        else:
-            clear_auth_session()
-    except Exception:
-        clear_auth_session()
+def fetch_profile(max_retries: int = 3):
+    token = st.session_state.get('access_token') or st.query_params.get("session_token")
+    if not token:
+        return None
+    headers = {"Authorization": f"Bearer {token}"}
+    import time
+    for attempt in range(max_retries):
+        try:
+            response = api_http.get(f"{API_URL}/users/me", headers=headers)
+            if response.status_code == 200:
+                profile_data = response.json()
+                st.session_state['access_token'] = token
+                st.session_state['profile'] = profile_data
+                return profile_data
+            elif response.status_code in (401, 403):
+                clear_auth_session()
+                return None
+            else:
+                # Backend is warming up or 5xx during reload
+                if attempt < max_retries - 1:
+                    time.sleep(0.35)
+        except Exception:
+            if attempt < max_retries - 1:
+                time.sleep(0.35)
+    return st.session_state.get('profile')
 
-# Automatically restore session if page is refreshed
+# Automatically restore session if page is refreshed or code reloads
 if not st.session_state.get('access_token'):
     persisted_token = st.query_params.get("session_token")
     if persisted_token:
         st.session_state['access_token'] = persisted_token
         fetch_profile()
-        if not st.session_state.get('profile'):
-            clear_auth_session()
 
 def get_frontend_base_url():
     explicit = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")
@@ -3885,13 +3896,23 @@ if st.session_state['access_token'] is None:
             s_role = "MENTOR" if "Mentor" in signup_role_choice else "MENTEE"
             render_sso_gateway_section(default_role=s_role, mode="signup", key_suffix="signup")
 else:
-    profile = st.session_state['profile']
+    profile = st.session_state.get('profile')
     if not profile:
-        fetch_profile()
-        profile = st.session_state['profile']
+        profile = fetch_profile()
     if not profile:
-        clear_auth_session()
-        st.rerun()
+        if not st.session_state.get('access_token'):
+            clear_auth_session()
+            st.rerun()
+        else:
+            # Backend process may be completing hot-reload
+            import time
+            time.sleep(0.5)
+            profile = fetch_profile()
+            if not profile:
+                st.warning("⏳ Reconnecting session to backend service...")
+                if st.button("🔄 Refresh Dashboard", key="btn_reload_session_dash"):
+                    st.rerun()
+                st.stop()
         
     user = profile.get('user', {})
     role = (user.get('role') or "MENTEE").upper()

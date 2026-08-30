@@ -887,22 +887,7 @@ def sso_authenticate(req: schemas.SSOLoginRequest, db: Session = Depends(get_db)
                 nomination.status = "ACCEPTED"
                 db.commit()
     else:
-        # Prevent unregistered users from signing in without prior sign-up
-        if req.mode == "signin":
-            log_security_event(
-                db=db,
-                event_type="LOGIN_FAILED",
-                user_email=email,
-                status="FAILED",
-                ip_address="SSO-OAuth",
-                details=f"Unregistered {provider.capitalize()} account attempted sign-in without prior sign-up."
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No account found for this Google email ({email}). You must create an account first on the 'Create Account / Sign Up' tab before you can sign in."
-            )
-
-        # Allow seamless new user creation only during explicit 'signup' mode
+        # Seamlessly create and provision user upon verified Google/Facebook SSO authentication
         is_new_user = True
         user_role = (req.role or "MENTEE").upper()
         if user_role not in ["MENTEE", "MENTOR"]:

@@ -792,27 +792,37 @@ if "code" in st.query_params:
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
             res_data = resp.json()
-            if _mode == "signup":
-                # Account successfully registered via Google/Facebook SSO
-                role_label = res_data.get('role', _role).capitalize()
-                user_email = res_data.get('email', '')
-                provider_label = res_data.get('provider', _prov).capitalize()
-                st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}! Please select 'Continue as {role_label} with {provider_label}' on the Sign In tab to enter your dashboard."
-                clear_auth_session()
-                st.session_state['sso_error'] = None
-            else:
-                st.session_state['access_token'] = res_data['access_token']
-                st.query_params["session_token"] = res_data['access_token']
+            if isinstance(res_data, dict) and res_data.get('access_token'):
+                token = res_data['access_token']
+                st.session_state['access_token'] = token
+                st.query_params["session_token"] = token
                 st.session_state['two_factor_challenge'] = None
                 st.session_state['sso_error'] = None
                 if 'sso_success_msg' in st.session_state:
                     del st.session_state['sso_success_msg']
                 fetch_profile()
+            elif isinstance(res_data, dict):
+                role_label = res_data.get('role', _role).capitalize()
+                user_email = res_data.get('email', '')
+                provider_label = res_data.get('provider', _prov).capitalize()
+                st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}!"
+                clear_auth_session()
+                st.session_state['sso_error'] = None
+            else:
+                st.session_state['sso_error'] = "Unexpected response from authentication server."
         else:
-            err_msg = resp.json().get('detail', 'Google authentication failed.')
+            err_msg = "Google authentication failed."
+            try:
+                err_json = resp.json()
+                if isinstance(err_json, dict):
+                    err_msg = err_json.get('detail') or err_json.get('message') or str(err_json)
+                else:
+                    err_msg = str(err_json)
+            except Exception:
+                err_msg = resp.text or f"HTTP {resp.status_code}"
             st.session_state['sso_error'] = err_msg
     except Exception as e:
-        st.session_state['sso_error'] = f"Google Connection Error: {e}"
+        st.session_state['sso_error'] = f"Google Connection Error: {str(e)}"
         
     for k in ["code", "provider", "role", "mode", "state", "invite_code", "scope", "authuser", "prompt", "hd"]:
         if k in st.query_params:

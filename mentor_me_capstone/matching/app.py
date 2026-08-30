@@ -792,24 +792,27 @@ if "code" in st.query_params:
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code == 200:
             res_data = resp.json()
-            if isinstance(res_data, dict) and res_data.get('access_token'):
-                token = res_data['access_token']
-                st.session_state['access_token'] = token
-                st.query_params["session_token"] = token
-                st.session_state['two_factor_challenge'] = None
-                st.session_state['sso_error'] = None
-                if 'sso_success_msg' in st.session_state:
-                    del st.session_state['sso_success_msg']
-                fetch_profile()
-            elif isinstance(res_data, dict):
+            if _mode == "signup":
+                # Registration Phase: Account successfully registered via Google/Facebook SSO
                 role_label = res_data.get('role', _role).capitalize()
                 user_email = res_data.get('email', '')
                 provider_label = res_data.get('provider', _prov).capitalize()
-                st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}!"
+                st.session_state['sso_success_msg'] = f"🎉 Your {role_label} account ({user_email}) has been successfully created with {provider_label}! Please select 'Continue as {role_label} with {provider_label}' on the Sign In tab to enter your dashboard."
                 clear_auth_session()
                 st.session_state['sso_error'] = None
             else:
-                st.session_state['sso_error'] = "Unexpected response from authentication server."
+                # Sign In Phase: Enter dashboard directly
+                if isinstance(res_data, dict) and res_data.get('access_token'):
+                    token = res_data['access_token']
+                    st.session_state['access_token'] = token
+                    st.query_params["session_token"] = token
+                    st.session_state['two_factor_challenge'] = None
+                    st.session_state['sso_error'] = None
+                    if 'sso_success_msg' in st.session_state:
+                        del st.session_state['sso_success_msg']
+                    fetch_profile()
+                else:
+                    st.session_state['sso_error'] = "Authentication token missing from response."
         else:
             err_msg = "Google authentication failed."
             try:

@@ -2433,6 +2433,7 @@ def get_unread_messages_summary(
 @app.get("/api/v1/messages/{match_id}", response_model=List[schemas.MessageResponse])
 def get_match_messages(
     match_id: str,
+    mark_as_read: bool = False,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -2446,14 +2447,14 @@ def get_match_messages(
     # Query all messages
     msgs = db.query(models.Message).filter(models.Message.match_id == match_id).order_by(models.Message.created_at.asc()).all()
     
-    # Mark messages sent to current_user as read
-    marked_any = False
-    for msg in msgs:
-        if msg.recipient_id == current_user.id and not msg.is_read:
-            msg.is_read = True
-            marked_any = True
-    if marked_any:
-        db.commit()
+    if mark_as_read:
+        marked_any = False
+        for msg in msgs:
+            if msg.recipient_id == current_user.id and not msg.is_read:
+                msg.is_read = True
+                marked_any = True
+        if marked_any:
+            db.commit()
         
     user_cache = {}
     def get_sender_name(user_id):

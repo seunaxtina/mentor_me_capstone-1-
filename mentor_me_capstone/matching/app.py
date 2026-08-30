@@ -1488,15 +1488,26 @@ def api_reset_password(challenge_token: str, code: str, new_password: str):
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
-def api_get_messages(match_id: str):
+def api_get_messages(match_id: str, mark_as_read: bool = False):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        response = api_http.get(f"{API_URL}/messages/{match_id}", headers=headers)
+        params = {"mark_as_read": "true"} if mark_as_read else {}
+        response = api_http.get(f"{API_URL}/messages/{match_id}", headers=headers, params=params)
         if response.status_code == 200:
             return response.json()
         return []
     except Exception:
         return []
+
+def api_mark_messages_read(match_id: str):
+    if not st.session_state.get('access_token'):
+        return False
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    try:
+        response = api_http.post(f"{API_URL}/messages/{match_id}/read", headers=headers)
+        return response.status_code == 200
+    except Exception:
+        return False
 
 def api_send_message(match_id: str, content: str):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
@@ -2023,7 +2034,7 @@ def generate_user_directory_html_dossier(all_users):
 
 @st.fragment(run_every="4s")
 def render_active_chat_stream(match_id: str, partner_name: str, current_role: str):
-    messages = api_get_messages(match_id)
+    messages = api_get_messages(match_id, mark_as_read=True)
     chat_box = st.container(height=380, border=False)
     with chat_box:
         if not messages:
@@ -2426,6 +2437,7 @@ def render_top_notifications_bell(current_role: str):
                             partner_name = m_obj.get('mentor_name', 'Mentor') if m_obj else 'Your Connection'
                             msg_alert_btn = f"💬 **{partner_name}** ({count} new message{'s' if count > 1 else ''})"
                             if st.button(msg_alert_btn, key=f"notif_msg_btn_{mid}_{current_role}", use_container_width=True):
+                                api_mark_messages_read(mid)
                                 st.session_state['active_chat_match_id'] = mid
                                 st.session_state['trigger_tab_switch'] = "Direct Messages"
                                 st.rerun()
@@ -2480,6 +2492,7 @@ def render_top_notifications_bell(current_role: str):
                             partner_name = m_obj.get('mentee_name', 'Mentee') if m_obj else 'Your Connection'
                             msg_alert_btn = f"💬 **{partner_name}** ({count} new message{'s' if count > 1 else ''})"
                             if st.button(msg_alert_btn, key=f"notif_msg_btn_{mid}_{current_role}", use_container_width=True):
+                                api_mark_messages_read(mid)
                                 st.session_state['active_chat_match_id'] = mid
                                 st.session_state['trigger_tab_switch'] = "Direct Messages"
                                 st.rerun()

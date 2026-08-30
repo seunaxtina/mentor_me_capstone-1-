@@ -12,28 +12,29 @@ import requests
 import pandas as pd
 from dotenv import load_dotenv
 
-# Monkey-patch Response.json to be resilient against non-JSON HTTP responses (e.g. 500/502/503 HTML error pages)
-import requests.models
-_original_requests_json = requests.models.Response.json
-
-def _safe_requests_json(self, **kwargs):
+def _safe_json(response) -> dict:
+    """Safely parse a JSON response, falling back to a plain dict on non-JSON bodies (e.g. HTML 502/503 pages)."""
     try:
-        return _original_requests_json(self, **kwargs)
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, str):
+            return json.loads(data)
+        return data
     except Exception:
         pass
-    body_text = getattr(self, "text", "")
-    if body_text:
-        try:
-            return json.loads(body_text)
-        except Exception:
-            pass
-    raw_content = getattr(self, "content", b"")
-    if raw_content:
-        try:
-            return json.loads(raw_content.decode("utf-8", errors="ignore"))
-        except Exception:
-            pass
-    status_code = getattr(self, "status_code", "Unknown")
+    for attr in ("text", "content"):
+        raw = getattr(response, attr, None)
+        if raw:
+            try:
+                body = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else raw
+                parsed = json.loads(body)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+    status_code = getattr(response, "status_code", "Unknown")
+    body_text = getattr(response, "text", "") or ""
     snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
     if not snippet.strip():
         snippet = f"Server returned HTTP {status_code}"
@@ -42,41 +43,6 @@ def _safe_requests_json(self, **kwargs):
         "two_factor_required": False,
         "message": f"HTTP {status_code}: {snippet}"
     }
-
-requests.models.Response.json = _safe_requests_json
-
-try:
-    import httpx
-    _original_httpx_json = httpx.Response.json
-    def _safe_httpx_json(self, **kwargs):
-        try:
-            return _original_httpx_json(self, **kwargs)
-        except Exception:
-            pass
-        body_text = getattr(self, "text", "")
-        if body_text:
-            try:
-                return json.loads(body_text)
-            except Exception:
-                pass
-        raw_content = getattr(self, "content", b"")
-        if raw_content:
-            try:
-                return json.loads(raw_content.decode("utf-8", errors="ignore"))
-            except Exception:
-                pass
-        status_code = getattr(self, "status_code", "Unknown")
-        snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
-        if not snippet.strip():
-            snippet = f"Server returned HTTP {status_code}"
-        return {
-            "detail": f"HTTP {status_code}: {snippet}",
-            "two_factor_required": False,
-            "message": f"HTTP {status_code}: {snippet}"
-        }
-    httpx.Response.json = _safe_httpx_json
-except Exception:
-    pass
 
 load_dotenv()
 
@@ -815,22 +781,7 @@ if "code" in st.query_params:
         }
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code in (200, 201):
-            res_data = resp.json()
-            if isinstance(res_data, str):
-                try:
-                    res_data = json.loads(res_data)
-                except Exception:
-                    pass
-            if isinstance(res_data, dict) and "detail" in res_data and "access_token" in str(res_data["detail"]):
-                try:
-                    raw_str = str(res_data["detail"])
-                    if "{" in raw_str:
-                        extracted_json = "{" + raw_str.split("{", 1)[1]
-                        parsed_extracted = json.loads(extracted_json)
-                        if isinstance(parsed_extracted, dict):
-                            res_data = parsed_extracted
-                except Exception:
-                    pass
+            res_data = _safe_json(resp)
             if _mode == "signup":
                 # Registration Phase: Account successfully registered via Google/Facebook SSO
                 role_label = res_data.get('role', _role).capitalize()
@@ -856,15 +807,8 @@ if "code" in st.query_params:
                     err_hint = res_data.get('detail') if isinstance(res_data, dict) else str(res_data)
                     st.session_state['sso_error'] = f"Google Sign-In Error: {err_hint or 'Invalid token response from server.'}"
         else:
-            err_msg = "Google authentication failed."
-            try:
-                err_json = resp.json()
-                if isinstance(err_json, dict):
-                    err_msg = err_json.get('detail') or err_json.get('message') or str(err_json)
-                else:
-                    err_msg = str(err_json)
-            except Exception:
-                err_msg = resp.text or f"HTTP {resp.status_code}"
+            err_data = _safe_json(resp)
+            err_msg = err_data.get('detail') or err_data.get('message') or f"Google authentication failed (HTTP {resp.status_code})."
             st.session_state['sso_error'] = err_msg
     except Exception as e:
         st.session_state['sso_error'] = f"Google Connection Error: {str(e)}"

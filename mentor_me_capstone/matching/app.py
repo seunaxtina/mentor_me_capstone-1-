@@ -2057,7 +2057,7 @@ def render_active_chat_stream(match_id: str, partner_name: str, current_role: st
             if btn_sub and inp_text.strip():
                 ok_s, res_s = api_send_message(match_id, inp_text.strip())
                 if ok_s:
-                    st.toast(f"📤 Message sent & email notification dispatched to {partner_name}!", icon="✅")
+                    st.toast(f"📤 Message sent to {partner_name}!", icon="💬")
                     st.rerun(scope="fragment")
                 else:
                     st.error(res_s)
@@ -2375,7 +2375,7 @@ def display_in_app_chat(match_id: str, partner_name: str, current_role: str, key
             if send_btn and msg_text.strip():
                 ok_s, res_s = api_send_message(match_id, msg_text.strip())
                 if ok_s:
-                    st.toast(f"📤 Message sent & email notification dispatched to {partner_name}!", icon="✅")
+                    st.toast(f"📤 Message sent to {partner_name}!", icon="💬")
                     st.rerun()
                 else:
                     st.error(res_s)

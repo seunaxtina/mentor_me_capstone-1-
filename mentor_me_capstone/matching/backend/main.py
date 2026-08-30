@@ -2526,9 +2526,17 @@ def send_match_message(
     elif current_user.role == "MENTOR" and current_user.mentor_profile and current_user.mentor_profile.name:
         s_name = current_user.mentor_profile.name
 
+    # Only dispatch email for the initial outreach / first message in a thread to prevent inbox spam.
+    # Ongoing live chat messages rely on in-app real-time toasts and notification bell alerts.
+    prior_msg_count = db.query(models.Message).filter(
+        models.Message.match_id == req.match_id,
+        models.Message.id != new_msg.id
+    ).count()
+    is_initial_intro = (prior_msg_count == 0)
+
     # Dispatch instant email notification to recipient
     recipient_user = db.query(models.User).filter(models.User.id == recipient_id).first()
-    if recipient_user and recipient_user.email:
+    if is_initial_intro and recipient_user and recipient_user.email:
         r_name = recipient_user.email.split("@")[0]
         if recipient_user.role == "MENTEE" and recipient_user.mentee_profile and recipient_user.mentee_profile.name:
             r_name = recipient_user.mentee_profile.name

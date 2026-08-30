@@ -20,16 +20,28 @@ def _safe_requests_json(self, **kwargs):
     try:
         return _original_requests_json(self, **kwargs)
     except Exception:
-        status_code = getattr(self, "status_code", "Unknown")
-        body_text = getattr(self, "text", "")
-        snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
-        if not snippet.strip():
-            snippet = f"Server returned HTTP {status_code}"
-        return {
-            "detail": f"HTTP {status_code}: {snippet}",
-            "two_factor_required": False,
-            "message": f"HTTP {status_code}: {snippet}"
-        }
+        pass
+    body_text = getattr(self, "text", "")
+    if body_text:
+        try:
+            return json.loads(body_text)
+        except Exception:
+            pass
+    raw_content = getattr(self, "content", b"")
+    if raw_content:
+        try:
+            return json.loads(raw_content.decode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+    status_code = getattr(self, "status_code", "Unknown")
+    snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
+    if not snippet.strip():
+        snippet = f"Server returned HTTP {status_code}"
+    return {
+        "detail": f"HTTP {status_code}: {snippet}",
+        "two_factor_required": False,
+        "message": f"HTTP {status_code}: {snippet}"
+    }
 
 requests.models.Response.json = _safe_requests_json
 
@@ -40,16 +52,28 @@ try:
         try:
             return _original_httpx_json(self, **kwargs)
         except Exception:
-            status_code = getattr(self, "status_code", "Unknown")
-            body_text = getattr(self, "text", "")
-            snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
-            if not snippet.strip():
-                snippet = f"Server returned HTTP {status_code}"
-            return {
-                "detail": f"HTTP {status_code}: {snippet}",
-                "two_factor_required": False,
-                "message": f"HTTP {status_code}: {snippet}"
-            }
+            pass
+        body_text = getattr(self, "text", "")
+        if body_text:
+            try:
+                return json.loads(body_text)
+            except Exception:
+                pass
+        raw_content = getattr(self, "content", b"")
+        if raw_content:
+            try:
+                return json.loads(raw_content.decode("utf-8", errors="ignore"))
+            except Exception:
+                pass
+        status_code = getattr(self, "status_code", "Unknown")
+        snippet = (body_text[:200] + "...") if len(body_text) > 200 else body_text
+        if not snippet.strip():
+            snippet = f"Server returned HTTP {status_code}"
+        return {
+            "detail": f"HTTP {status_code}: {snippet}",
+            "two_factor_required": False,
+            "message": f"HTTP {status_code}: {snippet}"
+        }
     httpx.Response.json = _safe_httpx_json
 except Exception:
     pass
@@ -792,6 +816,21 @@ if "code" in st.query_params:
         resp = api_http.post(f"{API_URL}/auth/sso/callback", json=payload)
         if resp.status_code in (200, 201):
             res_data = resp.json()
+            if isinstance(res_data, str):
+                try:
+                    res_data = json.loads(res_data)
+                except Exception:
+                    pass
+            if isinstance(res_data, dict) and "detail" in res_data and "access_token" in str(res_data["detail"]):
+                try:
+                    raw_str = str(res_data["detail"])
+                    if "{" in raw_str:
+                        extracted_json = "{" + raw_str.split("{", 1)[1]
+                        parsed_extracted = json.loads(extracted_json)
+                        if isinstance(parsed_extracted, dict):
+                            res_data = parsed_extracted
+                except Exception:
+                    pass
             if _mode == "signup":
                 # Registration Phase: Account successfully registered via Google/Facebook SSO
                 role_label = res_data.get('role', _role).capitalize()

@@ -623,12 +623,26 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
     email_clean = req.email.lower().strip()
     user = db.query(models.User).filter(models.User.email == email_clean).first()
 
-    # P1: Prevent user enumeration — always return a success-like response
+    # Case 2: Email is not registered in the system
     if not user:
-        return schemas.ForgotPasswordResponse(
-            message=f"If an account exists for {email_clean}, a password reset code has been sent.",
-            challenge_token="",
-            delivery_hint="Check your email for the reset code."
+        log_security_event(
+            db=db,
+            event_type="PASSWORD_RESET_ATTEMPT_UNKNOWN_EMAIL",
+            user_email=email_clean,
+            status="FAILED",
+            ip_address="Web-Client",
+            details="Password reset requested for an unregistered email."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No account found for this email address ({email_clean}). Please check for typos or create an account on the 'Create Account' tab."
+        )
+
+    # Case 3: Account was registered via SSO without a custom password
+    if user.auth_provider and user.auth_provider.upper() in ("GOOGLE", "FACEBOOK") and (not user.password_hash or user.password_hash.startswith("oauth_")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This account ({email_clean}) is registered using {user.auth_provider.capitalize()} Sign-In. You do not need a password — please use the 'Continue with {user.auth_provider.capitalize()}' button on the Sign In tab."
         )
         
     otp = auth.generate_otp_code(6)
@@ -657,7 +671,16 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
         body_text=f"Hello,\n\nYour 6-digit password reset code is: {otp}\n\nThis code will expire in 15 minutes.\n\nIf you did not request a password reset, please ignore this email.\n\nBest,\nMentoring-Me Support Team"
     )
     
-    delivery_msg = f"If an account exists for {email_clean}, a password reset code has been sent."
+    log_security_event(
+        db=db,
+        event_type="PASSWORD_RESET_REQUESTED",
+        user_email=user.email,
+        status="SUCCESS",
+        ip_address="Web-Client",
+        details="Password reset code generated and sent."
+    )
+    
+    delivery_msg = f"A 6-digit password reset code has been sent to {user.email}. Enter it below along with your new password."
     
     return schemas.ForgotPasswordResponse(
         message=delivery_msg,

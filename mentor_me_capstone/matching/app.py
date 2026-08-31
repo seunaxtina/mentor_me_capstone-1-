@@ -1516,8 +1516,10 @@ def api_forgot_password(email: str):
     try:
         response = api_http.post(f"{API_URL}/auth/forgot-password", json={"email": email.strip()})
         if response.status_code == 200:
-            return True, response.json()
-        return False, response.json().get("detail", "Failed to initiate password reset.")
+            return True, _safe_json(response)
+        err_data = _safe_json(response)
+        detail = err_data.get("detail") or err_data.get("message") or "Failed to initiate password reset."
+        return False, detail
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
@@ -1530,8 +1532,11 @@ def api_reset_password(challenge_token: str, code: str, new_password: str):
         }
         response = api_http.post(f"{API_URL}/auth/reset-password", json=payload)
         if response.status_code == 200:
-            return True, response.json().get("message", "Password reset successful!")
-        return False, response.json().get("detail", "Failed to reset password.")
+            res_data = _safe_json(response)
+            return True, res_data.get("message", "Password reset successful!")
+        err_data = _safe_json(response)
+        detail = err_data.get("detail") or err_data.get("message") or "Failed to reset password."
+        return False, detail
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
@@ -3964,11 +3969,12 @@ if st.session_state['access_token'] is None:
             render_sso_gateway_section(default_role=s_in_role, mode="signin", key_suffix="signin")
             
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-            with st.expander("🔑 Forgot Password?", expanded=False):
+            with st.expander("🔑 Forgot Password?", expanded=bool(st.session_state.get('forgot_password_challenge'))):
                 st.caption("Reset your password securely via a 6-digit verification code.")
                 if st.session_state.get('forgot_password_challenge'):
                     target_fp_email = st.session_state.get('forgot_password_email', 'your email')
-                    st.info(f"✉️ Code sent to: **{target_fp_email}** (Valid for 15 minutes)")
+                    banner_msg = st.session_state.get('forgot_password_banner', f"A 6-digit reset code has been sent to **{target_fp_email}** (Valid for 15 minutes).")
+                    st.success(f"✉️ {banner_msg}")
                     
                     with st.form("reset_password_subform"):
                         r_code = st.text_input("6-Digit Reset Code", max_chars=6, key="reset_code_input_field", placeholder="e.g. 123456")
@@ -3989,12 +3995,14 @@ if st.session_state['access_token'] is None:
                                     new_password=r_new_pass.strip()
                                 )
                                 if ok_r:
-                                    st.success(msg_r)
+                                    st.success(f"🎉 {msg_r} You may now sign in with your new password.")
                                     del st.session_state['forgot_password_challenge']
                                     if 'forgot_password_preview' in st.session_state:
                                         del st.session_state['forgot_password_preview']
                                     if 'forgot_password_email' in st.session_state:
                                         del st.session_state['forgot_password_email']
+                                    if 'forgot_password_banner' in st.session_state:
+                                        del st.session_state['forgot_password_banner']
                                     st.rerun()
                                 else:
                                     st.error(msg_r)
@@ -4002,11 +4010,13 @@ if st.session_state['access_token'] is None:
                         del st.session_state['forgot_password_challenge']
                         if 'forgot_password_preview' in st.session_state:
                             del st.session_state['forgot_password_preview']
+                        if 'forgot_password_banner' in st.session_state:
+                            del st.session_state['forgot_password_banner']
                         st.rerun()
                 else:
                     with st.form("forgot_password_req_form"):
-                        fp_email = st.text_input("Enter your account email", key="forgot_email_in", placeholder="e.g. your_email@example.com")
-                        fp_submit = st.form_submit_button("📩 Send Reset Code", use_container_width=True)
+                        fp_email = st.text_input("Enter your registered account email", key="forgot_email_in", placeholder="e.g. your_email@example.com")
+                        fp_submit = st.form_submit_button("📩 Send 6-Digit Reset Code", use_container_width=True)
                         if fp_submit:
                             if not fp_email or "@" not in fp_email:
                                 st.error("Please enter a valid email address.")
@@ -4016,10 +4026,13 @@ if st.session_state['access_token'] is None:
                                     st.session_state['forgot_password_challenge'] = fp_res['challenge_token']
                                     st.session_state['forgot_password_preview'] = fp_res.get('otp_code_preview')
                                     st.session_state['forgot_password_email'] = fp_email.strip()
-                                    st.success(fp_res['message'])
+                                    st.session_state['forgot_password_banner'] = fp_res.get('message', 'Reset code sent!')
                                     st.rerun()
                                 else:
-                                    st.error(fp_res)
+                                    if "Google" in str(fp_res) or "Facebook" in str(fp_res) or "Sign-In" in str(fp_res):
+                                        st.info(f"ℹ️ {fp_res}")
+                                    else:
+                                        st.error(f"❌ {fp_res}")
                     
         with tab2:
             invite = st.session_state.get('invite_code')

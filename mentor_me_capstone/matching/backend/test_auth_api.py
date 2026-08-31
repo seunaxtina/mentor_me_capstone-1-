@@ -149,6 +149,35 @@ def test_api():
     after_token, after_resp = get_token(mentor_email, "password123")
     assert after_token is None, "FAIL: Deleted user was still able to authenticate."
     print("PASS: Verified deleted account cannot log in.")
+
+    # 12. Forgot Password and Password Reset Verification
+    print("\n12. Testing Forgot Password workflow...")
+    # 12a. Unregistered email should return 404
+    unreg_resp = client.post(f"{API_URL}/auth/forgot-password", json={"email": "non_existent_user_9999@test.com"})
+    assert unreg_resp.status_code == 404, f"FAIL: Expected 404 for unregistered email, got {unreg_resp.status_code}"
+    print("PASS: Unregistered email correctly returns 404 with helpful message.")
+
+    # 12b. Registered email should return 200 with challenge token
+    reg_resp = client.post(f"{API_URL}/auth/forgot-password", json={"email": email})
+    assert reg_resp.status_code == 200, f"FAIL: Expected 200 for registered email, got {reg_resp.status_code}"
+    reg_data = reg_resp.json()
+    assert "challenge_token" in reg_data
+    assert "otp_code_preview" in reg_data
+    print("PASS: Registered email receives reset challenge and 6-digit OTP.")
+
+    # 12c. Reset password with valid code
+    reset_resp = client.post(f"{API_URL}/auth/reset-password", json={
+        "challenge_token": reg_data["challenge_token"],
+        "code": reg_data["otp_code_preview"],
+        "new_password": "newSecurePassword456!"
+    })
+    assert reset_resp.status_code == 200, f"FAIL: Password reset failed: {reset_resp.text}"
+    print("PASS: Password reset succeeded with valid OTP code.")
+
+    # 12d. Verify login with newly updated password
+    new_token, new_login_resp = get_token(email, "newSecurePassword456!")
+    assert new_token is not None, f"FAIL: Login with new password failed: {new_login_resp.text}"
+    print("PASS: Verified login works with newly updated password.")
         
     print("\n" + "="*60)
     print("ALL API END-TO-END SECURITY TESTS PASSED SUCCESSFULLY!")

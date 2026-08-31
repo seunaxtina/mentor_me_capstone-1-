@@ -4194,9 +4194,6 @@ else:
         clear_auth_session()
         st.rerun()
         
-    st.sidebar.markdown("---")
-    st.sidebar.caption("👩‍💻 **Mentoring-Me**\n\nAdvancing and connecting women across technical disciplines with leaders & allies.")
-        
     if role == "MENTEE":
         mentee = profile['mentee']
         history = api_get_match_history()

@@ -688,12 +688,67 @@ if 'profile' not in st.session_state:
     st.session_state['profile'] = None
 if 'invite_code' not in st.session_state:
     st.session_state['invite_code'] = None
+if 'client_clear_token' not in st.session_state:
+    st.session_state['client_clear_token'] = False
 
 def clear_auth_session():
     st.session_state['access_token'] = None
     st.session_state['profile'] = None
     if "session_token" in st.query_params:
         del st.query_params["session_token"]
+    st.session_state['client_clear_token'] = True
+
+def render_client_storage_sync():
+    """
+    HTML5 LocalStorage & SessionStorage Synchronization Bridge:
+    - Automatically persists JWT authentication tokens to browser localStorage upon sign-in.
+    - Seamlessly restores session and stays on dashboard when the user refreshes (F5) or reloads the tab.
+    - Wipes browser localStorage when the user explicitly signs out.
+    """
+    token = st.session_state.get('access_token')
+    should_clear = st.session_state.get('client_clear_token', False)
+    
+    if should_clear:
+        js_code = """
+        <script>
+            try {
+                localStorage.removeItem('mm_session_token');
+                sessionStorage.removeItem('mm_session_token');
+            } catch(e) {}
+        </script>
+        """
+        import streamlit.components.v1 as components
+        components.html(js_code, height=0, width=0)
+        st.session_state['client_clear_token'] = False
+    elif token:
+        js_code = f"""
+        <script>
+            try {{
+                localStorage.setItem('mm_session_token', "{token}");
+                sessionStorage.setItem('mm_session_token', "{token}");
+            }} catch(e) {{}}
+        </script>
+        """
+        import streamlit.components.v1 as components
+        components.html(js_code, height=0, width=0)
+    else:
+        # User not logged into Python session state: check if browser localStorage has a persistent token to restore
+        js_code = """
+        <script>
+            try {
+                const storedToken = localStorage.getItem('mm_session_token') || sessionStorage.getItem('mm_session_token');
+                if (storedToken && storedToken.length > 20) {
+                    const currentUrl = new URL(window.parent.location.href);
+                    if (!currentUrl.searchParams.get("session_token")) {
+                        currentUrl.searchParams.set("session_token", storedToken);
+                        window.parent.location.replace(currentUrl.toString());
+                    }
+                }
+            } catch(e) {}
+        </script>
+        """
+        import streamlit.components.v1 as components
+        components.html(js_code, height=0, width=0)
 
 def fetch_profile(max_retries: int = 3):
     token = st.session_state.get('access_token') or st.query_params.get("session_token")
@@ -708,6 +763,7 @@ def fetch_profile(max_retries: int = 3):
                 profile_data = _safe_json(response)
                 st.session_state['access_token'] = token
                 st.session_state['profile'] = profile_data
+                st.query_params["session_token"] = token
                 return profile_data
             elif response.status_code in (401, 403):
                 clear_auth_session()
@@ -727,6 +783,9 @@ if not st.session_state.get('access_token'):
     if persisted_token:
         st.session_state['access_token'] = persisted_token
         fetch_profile()
+
+# Activate client storage bridge
+render_client_storage_sync()
 
 def get_frontend_base_url():
     explicit = os.getenv("APP_BASE_URL") or os.getenv("FRONTEND_URL")

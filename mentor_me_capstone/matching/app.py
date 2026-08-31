@@ -44,6 +44,18 @@ def _safe_json(response) -> dict:
         "message": f"HTTP {status_code}: {snippet}"
     }
 
+def format_experience_years(val) -> str:
+    """Format experience years cleanly without trailing floating-point noise (e.g. 12.0 -> '12', 1.5000000002 -> '1.5')."""
+    if val is None or val == "":
+        return "Not stated"
+    try:
+        f_val = float(val)
+        if f_val.is_integer():
+            return f"{int(f_val)}"
+        return f"{f_val:.1f}".rstrip('0').rstrip('.')
+    except Exception:
+        return str(val)
+
 load_dotenv()
 
 # Synchronize Streamlit Cloud secrets into os.environ for backend & services
@@ -3880,7 +3892,7 @@ def display_profile_card(name, country, ed_level, roles, years, org_size, priori
     st.markdown(card_header_html, unsafe_allow_html=True)
     
     st.write(f"💼 **Role(s):** {roles}")
-    st.write(f"⏳ **Professional Experience:** {years} years")
+    st.write(f"⏳ **Professional Experience:** {format_experience_years(years)} years")
     st.write(f"🏢 **Company Size:** {org_size or 'Not stated'}")
     st.write(f"🌟 **Job Priorities:** {priorities or 'Not stated'}")
     if additional_details:
@@ -4649,7 +4661,7 @@ else:
                             'Mentor ID': m['mentor_id'],
                             'Mentor Name': m['mentor_name'] or f"Mentor #{m['mentor_id']}",
                             'Mentor Role(s)': m['mentor_devtype'],
-                            'Experience (yrs)': m['mentor_years'],
+                            'Experience (yrs)': format_experience_years(m.get('mentor_years')),
                             'Country': m['mentor_country'],
                             'Score': f"{pct_score}%",
                             'Confidence': m['match_quality'],
@@ -4680,7 +4692,7 @@ else:
                             cols = st.columns([2.5, 1.2, 0.8])
                             raw_s = m['total_score']
                             pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
-                            cols[0].write(f"**{m['mentor_name']}** ({m['mentor_devtype']} | {m['mentor_years']} yrs exp) — **Score: {pct_s}%** ({m['match_quality']})") 
+                            cols[0].write(f"**{m['mentor_name']}** ({m['mentor_devtype']} | {format_experience_years(m.get('mentor_years'))} yrs exp) — **Score: {pct_s}%** ({m['match_quality']})") 
                             
                             with st.expander(f"👤 View {m['mentor_name']}'s Profile Details"):
                                 display_profile_card(
@@ -6028,7 +6040,7 @@ else:
                             with hd_l:
                                 st.markdown(f"##### {p['mentee_name']}")
                                 roles_disp = (p.get('mentee_devtype') or '').replace(';', ' · ')
-                                st.caption(f"📍 {p.get('mentee_country', '')}  ·  {roles_disp}  ·  {p.get('mentee_years', '?')} yrs exp")
+                                st.caption(f"📍 {p.get('mentee_country', '')}  ·  {roles_disp}  ·  {format_experience_years(p.get('mentee_years'))} yrs exp")
                                 st.markdown(
                                     f"<span style='background:#fff3cd; color:#856404; padding:3px 10px; "
                                     f"border-radius:12px; font-size:0.8rem; font-weight:600;'>🔔 Awaiting Response</span>"
@@ -6187,7 +6199,7 @@ else:
                         with cl:
                             st.markdown(f"##### {conn['mentee_name']}")
                             roles_c = (conn.get('mentee_devtype') or '').replace(';', ' · ')
-                            st.caption(f"📍 {conn.get('mentee_country', '')}  ·  {roles_c}  ·  {conn.get('mentee_years', '?')} yrs exp")
+                            st.caption(f"📍 {conn.get('mentee_country', '')}  ·  {roles_c}  ·  {format_experience_years(conn.get('mentee_years'))} yrs exp")
                             st.markdown(
                                 f"<span style='background:#d4edda; color:#155724; padding:3px 10px; "
                                 f"border-radius:12px; font-size:0.8rem; font-weight:600;'>✅ Connected</span>"
@@ -6415,7 +6427,7 @@ else:
                         with top_ml:
                             st.markdown(f"##### {mh['mentee_name']}")
                             m_roles_display = (mh.get('mentee_devtype') or '').replace(';', ' · ')
-                            st.caption(f"📍 {mh.get('mentee_country', '')}  ·  {m_roles_display}  ·  {mh.get('mentee_years', '?')} yrs exp")
+                            st.caption(f"📍 {mh.get('mentee_country', '')}  ·  {m_roles_display}  ·  {format_experience_years(mh.get('mentee_years'))} yrs exp")
                             st.markdown(
                                 f"<span style='background:{mh_bg}; color:{mh_color}; "
                                 f"padding:3px 10px; border-radius:12px; font-size:0.8rem; font-weight:600;'>"

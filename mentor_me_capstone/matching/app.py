@@ -705,7 +705,7 @@ def fetch_profile(max_retries: int = 3):
         try:
             response = api_http.get(f"{API_URL}/users/me", headers=headers)
             if response.status_code == 200:
-                profile_data = response.json()
+                profile_data = _safe_json(response)
                 st.session_state['access_token'] = token
                 st.session_state['profile'] = profile_data
                 return profile_data

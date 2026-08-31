@@ -3999,6 +3999,27 @@ if st.session_state['access_token'] is None:
         tab1, tab2 = st.tabs(["🔑 Sign In", "📝 Create Account"])
         
         with tab1:
+            # 1-Click Evaluation / Demo Accounts Quick Access
+            with st.expander("⚡ Quick Demo Access (1-Click Evaluation)", expanded=True):
+                st.caption("Instantly experience the platform with pre-configured personas (zero typing required):")
+                col_d1, col_d2, col_d3 = st.columns(3)
+                with col_d1:
+                    if st.button("🌱 Demo Mentee", key="btn_quick_demo_mentee", use_container_width=True, help="Login as Emily Smith (Early-Career Engineer)"):
+                        ok_d, msg_d = api_login("mentee.demo@mentoring-me.demo", "password123")
+                        if ok_d is True:
+                            st.rerun()
+                with col_d2:
+                    if st.button("🧭 Demo Mentor", key="btn_quick_demo_mentor", use_container_width=True, help="Login as Dr. Sarah Jenkins (Staff Leader)"):
+                        ok_d, msg_d = api_login("mentor.demo@mentoring-me.demo", "password123")
+                        if ok_d is True:
+                            st.rerun()
+                with col_d3:
+                    if st.button("🛡️ Super Admin", key="btn_quick_demo_admin", use_container_width=True, help="Login as Platform Administrator"):
+                        ok_d, msg_d = api_login("admin@mentoring-me.demo", "password123")
+                        if ok_d is True:
+                            st.rerun()
+
+            st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
             # Step 1: Primary Credentials
             with st.form("login_form"):
                 email = st.text_input("Email", placeholder="e.g. user_90001@mentoring-me.demo or admin@mentoring-me.demo")

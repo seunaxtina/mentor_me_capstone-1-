@@ -327,10 +327,10 @@ def login(
         if form_data.password in ["adminpassword", "password123", "admin123", "admin"]:
             if not user:
                 user = models.User(
-                    id="admin-uuid-clean-001",
+                    id=str(uuid.uuid4()),
                     email=clean_username,
                     name="Admin Demo",
-                    password_hash=auth.get_password_hash("adminpassword"),
+                    password_hash=auth.get_password_hash("password123"),
                     role="ADMIN",
                     is_active=True,
                     is_verified=True,
@@ -352,6 +352,100 @@ def login(
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+    # Auto-provision or verify Demo Mentee credentials
+    elif clean_username in ["mentee.demo@mentoring-me.demo", "user_90001@mentoring-me.demo"]:
+        if form_data.password in ["password123", "menteepassword", "demo123"]:
+            if not user:
+                new_id = str(uuid.uuid4())
+                user = models.User(
+                    id=new_id,
+                    email=clean_username,
+                    name="Emily Smith (Demo Mentee)",
+                    password_hash=auth.get_password_hash("password123"),
+                    role="MENTEE",
+                    is_active=True,
+                    is_verified=True,
+                    two_factor_enabled=False
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                mentee = models.Mentee(
+                    id=new_id,
+                    name="Emily Smith (Demo Mentee)",
+                    country="United Kingdom",
+                    ed_level="Bachelor's degree (B.A., B.S., B.Eng., etc.)",
+                    dev_type="Developer, front-end;Developer, full-stack",
+                    years_code_pro=1.5,
+                    exp_tier="0-2y",
+                    job_factors="Remote work options;Flex time or a flexible schedule;Opportunities for professional development",
+                    org_size="100 to 499 employees"
+                )
+                db.add(mentee)
+                db.commit()
+            else:
+                user.role = "MENTEE"
+                user.two_factor_enabled = False
+                user.is_verified = True
+                user.is_active = True
+                db.commit()
+                ensure_user_profile(user, "MENTEE", db, name=user.name or "Emily Smith (Demo Mentee)")
+        elif user and not auth.verify_password(form_data.password, user.password_hash):
+            log_security_event(db, "LOGIN_FAILED", user_email=form_data.username, status="FAILED", details="Incorrect password attempt.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Auto-provision or verify Demo Mentor credentials
+    elif clean_username in ["mentor.demo@mentoring-me.demo", "user_1001@mentoring-me.demo"]:
+        if form_data.password in ["password123", "mentorpassword", "demo123"]:
+            if not user:
+                new_id = str(uuid.uuid4())
+                user = models.User(
+                    id=new_id,
+                    email=clean_username,
+                    name="Dr. Sarah Jenkins (Demo Mentor)",
+                    password_hash=auth.get_password_hash("password123"),
+                    role="MENTOR",
+                    is_active=True,
+                    is_verified=True,
+                    two_factor_enabled=False
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                mentor = models.Mentor(
+                    id=new_id,
+                    name="Dr. Sarah Jenkins (Demo Mentor)",
+                    country="United Kingdom",
+                    ed_level="Master's degree (M.A., M.S., M.Eng., MBA, etc.)",
+                    dev_type="Engineering manager;Developer, full-stack;Cloud infrastructure leader",
+                    years_code_pro=12.0,
+                    exp_tier="10-20y",
+                    job_factors="Executive sponsorship;Diversity & Inclusion leadership;Architectural review",
+                    org_size="1,000 to 4,999 employees",
+                    is_active=True,
+                    max_mentees=3
+                )
+                db.add(mentor)
+                db.commit()
+            else:
+                user.role = "MENTOR"
+                user.two_factor_enabled = False
+                user.is_verified = True
+                user.is_active = True
+                db.commit()
+                ensure_user_profile(user, "MENTOR", db, name=user.name or "Dr. Sarah Jenkins (Demo Mentor)")
+        elif user and not auth.verify_password(form_data.password, user.password_hash):
+            log_security_event(db, "LOGIN_FAILED", user_email=form_data.username, status="FAILED", details="Incorrect password attempt.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     else:
         if not user or not auth.verify_password(form_data.password, user.password_hash):
             log_security_event(db, "LOGIN_FAILED", user_email=form_data.username, status="FAILED", details="Incorrect email or password.")
@@ -366,8 +460,12 @@ def login(
     if is_2fa_enabled is None:
         is_2fa_enabled = True
         
-    # Admin demo credentials bypass 2FA for immediate evaluation and management
-    if user.role == "ADMIN" or clean_username in ["admin@mentoring-me.demo", "admin@mentoring-me.com", "admin@mentorme.demo", "admin@mentorme.com"]:
+    # Dedicated demo credentials bypass 2FA for immediate evaluation and management
+    if user.role == "ADMIN" or clean_username in [
+        "admin@mentoring-me.demo", "admin@mentoring-me.com", "admin@mentorme.demo", "admin@mentorme.com",
+        "mentee.demo@mentoring-me.demo", "user_90001@mentoring-me.demo",
+        "mentor.demo@mentoring-me.demo", "user_1001@mentoring-me.demo"
+    ]:
         is_2fa_enabled = False
         
     if is_2fa_enabled:

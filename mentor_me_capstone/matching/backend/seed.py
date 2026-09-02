@@ -130,6 +130,7 @@ def seed_db(force_recreate: bool = False):
             mentees_to_insert.append(models.Mentee(
                 id=user_uuid,
                 name=real_name,
+                gender="Woman",
                 country=row['Country'],
                 ed_level=row['EdLevel'],
                 dev_type=row['DevType'],
@@ -139,10 +140,18 @@ def seed_db(force_recreate: bool = False):
                 org_size=row['OrgSize']
             ))
         else:
-            real_name = f"{random.choice(GENERAL_FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+            mentor_gender = "Woman" if gender == "Woman" else "Man"
+            if mentor_gender == "Woman":
+                first_name = random.choice(FEMALE_FIRST_NAMES)
+                is_ally = True
+            else:
+                first_name = random.choice(GENERAL_FIRST_NAMES)
+                is_ally = random.choice([True, True, False])  # High proportion of D&I allies
+            real_name = f"{first_name} {random.choice(LAST_NAMES)}"
             mentors_to_insert.append(models.Mentor(
                 id=user_uuid,
                 name=real_name,
+                gender=mentor_gender,
                 country=row['Country'],
                 ed_level=row['EdLevel'],
                 dev_type=row['DevType'],
@@ -151,6 +160,7 @@ def seed_db(force_recreate: bool = False):
                 job_factors=row['JobFactors'],
                 org_size=row['OrgSize'],
                 is_active=True,
+                is_diversity_ally=is_ally,
                 max_mentees=3
             ))
             

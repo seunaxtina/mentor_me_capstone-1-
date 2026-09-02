@@ -14,6 +14,10 @@ from backend import models, auth
 from matching_algorithm_v1 import compute_match_score, match_quality_label
 
 def populate_sample_matches():
+    from backend.seed import seed_db
+    print("Re-seeding database tables with gender fields...")
+    seed_db(force_recreate=True)
+    
     db = SessionLocal()
     print("Querying seeded mentees and mentors...")
     mentees = db.query(models.Mentee).limit(20).all()

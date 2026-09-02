@@ -75,12 +75,15 @@ def seed_db(force_recreate: bool = False):
     print("Preparing user profiles...")
     default_pw_hash = get_password_hash("password123")
     
+    existing_user_ids = set(u[0] for u in db.query(models.User.id).all())
+    existing_user_emails = set(u[0] for u in db.query(models.User.email).all())
+    
     users_to_insert = []
     mentees_to_insert = []
     mentors_to_insert = []
     
-    mentee_count = 0
-    mentor_count = 0
+    mentee_count = len(db.query(models.Mentee).all())
+    mentor_count = len(db.query(models.Mentor).all())
     max_to_seed = 1000  # Seed up to 1000 of each to keep database lightweight
     
     for _, row in df.iterrows():
@@ -88,6 +91,12 @@ def seed_db(force_recreate: bool = False):
         gender = row['Gender']
         exp_years = float(row['YearsCodePro'])
         tier = row['exp_tier']
+        
+        user_uuid = f"user-uuid-{resp_id}"
+        email = f"user_{resp_id}@mentoring-me.demo"
+        
+        if user_uuid in existing_user_ids or email in existing_user_emails:
+            continue
         
         is_mentee = (gender == 'Woman') and (tier in ['0-2y', '5-10y'])
         is_mentor = (exp_years >= 5.0) and not is_mentee
@@ -106,9 +115,6 @@ def seed_db(force_recreate: bool = False):
                 continue
             mentor_count += 1
             
-        user_uuid = f"user-uuid-{resp_id}"
-        email = f"user_{resp_id}@mentoring-me.demo"
-        
         users_to_insert.append(models.User(
             id=user_uuid,
             email=email,

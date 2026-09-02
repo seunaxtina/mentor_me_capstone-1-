@@ -2978,7 +2978,14 @@ def admin_reseed_database(
             mentors = db.query(models.Mentor).limit(60).all()
             statuses = ["ACCEPTED", "ACCEPTED", "ACCEPTED", "REQUESTED", "DECLINED"]
             for mentee in mentees:
-                for mentor in random.sample(mentors, min(3, len(mentors))):
+                selected_mentors = random.sample(mentors, min(3, len(mentors))) if mentors else []
+                for mentor in selected_mentors:
+                    existing_match = db.query(models.Match).filter(
+                        models.Match.mentee_id == mentee.id,
+                        models.Match.mentor_id == mentor.id
+                    ).first()
+                    if existing_match:
+                        continue
                     mentee_dict = {'DevType': mentee.dev_type or '', 'YearsCodePro': mentee.years_code_pro or 1.0, 'exp_tier': mentee.exp_tier or '0-2y', 'JobFactors': mentee.job_factors or '', 'OrgSize': mentee.org_size or ''}
                     mentor_dict = {'DevType': mentor.dev_type or '', 'YearsCodePro': mentor.years_code_pro or 5.0, 'exp_tier': mentor.exp_tier or '5-10y', 'JobFactors': mentor.job_factors or '', 'OrgSize': mentor.org_size or ''}
                     score, breakdown = compute_match_score(mentee_dict, mentor_dict)
@@ -3011,8 +3018,9 @@ def admin_reseed_database(
                         )
                         db.add(n)
             db.commit()
-        return {"message": "Database successfully populated with 2,000 empirical users and match records!"}
+        return {"message": "Database successfully populated with empirical users and match records!"}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -6635,13 +6635,16 @@ else:
 
         st.markdown("")
         em5, em6, em7, em8 = st.columns(4)
-        ff_rate = f"{int(round(len(ff_pairs)/len(accepted)*100))}%" if accepted else "N/A"
+        ff_pct = int(round(len(ff_pairs)/len(accepted)*100)) if accepted else 0
+        fm_ally_pct = max(0, 100 - ff_pct) if accepted else 0
+        ff_rate = f"{ff_pct}%" if accepted else "N/A"
+        fm_ally_rate = f"{fm_ally_pct}%" if accepted else "N/A"
         ally_rate = f"{int(round(len(ally_boosted)/total_matches*100))}%" if total_matches else "N/A"
-        rep_rate  = f"{int(round(len(rep_boosted)/total_matches*100))}%" if total_matches else "N/A"
         avg_score = f"{int(round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100))}%" if accepted else "N/A"
-        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections that are female mentee → female mentor")
-        em6.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied")
-        em7.metric("🌟 Rep. Boost Rate", rep_rate, help="% of all matches where the gender representation boost was applied")
+        
+        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections: female mentee → female mentor")
+        em6.metric("🤝 Female-Male Ally Match Rate", fm_ally_rate, help="% of accepted connections: female mentee → male ally mentor")
+        em7.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied")
         em8.metric("📈 Avg. Accepted Score", avg_score)
 
         # Match Quality & Confidence Score Distribution

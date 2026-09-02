@@ -6640,6 +6640,7 @@ else:
         ff_rate = f"{ff_pct}%" if accepted else "N/A"
         fm_ally_rate = f"{fm_ally_pct}%" if accepted else "N/A"
         ally_rate = f"{int(round(len(ally_boosted)/total_matches*100))}%" if total_matches else "N/A"
+        rep_rate = f"{int(round(len(rep_boosted)/total_matches*100))}%" if total_matches else "N/A"
         avg_score = f"{int(round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100))}%" if accepted else "N/A"
         
         em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections: female mentee → female mentor")
@@ -6890,6 +6891,7 @@ else:
                 "Female Mentees Count",
                 "Female Mentors Count",
                 "Female-Female Pairing Rate",
+                "Female-Male Ally Pairing Rate",
                 "D&I Ally Boost Adoption Rate",
                 "Gender Representation Boost Rate",
                 "Average Accepted Match Compatibility Score",
@@ -6903,6 +6905,7 @@ else:
                 len(set(h['mentee_name'] for h in female_mentee)),
                 len(set(h['mentor_name'] for h in female_mentor)),
                 ff_rate,
+                fm_ally_rate,
                 ally_rate,
                 rep_rate,
                 avg_score,

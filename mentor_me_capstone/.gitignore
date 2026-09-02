@@ -27,6 +27,8 @@ ENV/
 *.db
 *.sqlite
 *.sqlite3
+!mentor_me.db
+!matching/mentor_me.db
 
 # IDE
 .vscode/

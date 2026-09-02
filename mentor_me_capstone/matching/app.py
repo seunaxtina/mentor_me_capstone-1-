@@ -1722,14 +1722,20 @@ def generate_ics_calendar_file(title: str, description: str, location: str = "Vi
     )
     return ics_content.encode("utf-8")
 
+def is_female_gender_val(val, default_mentee=False):
+    if not val:
+        return default_mentee
+    v = str(val).strip().lower()
+    return 'woman' in v or 'female' in v or v == 'f'
+
 def generate_capstone_executive_report(history, all_users, audit_logs, all_notes, current_cfg):
     total_matches = len(history) if history else 0
     accepted = [h for h in history if h.get('status') == 'ACCEPTED'] if history else []
     acc_rate = (len(accepted) / total_matches * 100) if total_matches else 0.0
     
-    female_mentee = [h for h in history if h.get('mentee_gender') == 'Female'] if history else []
-    female_mentor = [h for h in history if h.get('mentor_gender') == 'Female'] if history else []
-    ff_pairs = [h for h in accepted if h.get('mentee_gender') == 'Female' and h.get('mentor_gender') == 'Female']
+    female_mentee = [h for h in history if is_female_gender_val(h.get('mentee_gender'), default_mentee=True)] if history else []
+    female_mentor = [h for h in history if is_female_gender_val(h.get('mentor_gender'), default_mentee=False)] if history else []
+    ff_pairs = [h for h in accepted if is_female_gender_val(h.get('mentee_gender'), default_mentee=True) and is_female_gender_val(h.get('mentor_gender'), default_mentee=False)]
     ff_rate = (len(ff_pairs) / len(accepted) * 100) if accepted else 0.0
     
     ally_boosted = [h for h in history if h.get('is_ally_boosted')] if history else []
@@ -6612,17 +6618,20 @@ else:
 
         total_matches   = len(history)
         accepted        = [h for h in history if h['status'] == 'ACCEPTED']
-        female_mentee   = [h for h in history if h.get('mentee_gender') == 'Female']
-        female_mentor   = [h for h in history if h.get('mentor_gender') == 'Female']
-        ff_pairs        = [h for h in accepted if h.get('mentee_gender') == 'Female' and h.get('mentor_gender') == 'Female']
+        female_mentee   = [h for h in history if is_female_gender_val(h.get('mentee_gender'), default_mentee=True)]
+        female_mentor   = [h for h in history if is_female_gender_val(h.get('mentor_gender'), default_mentee=False)]
+        ff_pairs        = [h for h in accepted if is_female_gender_val(h.get('mentee_gender'), default_mentee=True) and is_female_gender_val(h.get('mentor_gender'), default_mentee=False)]
         ally_boosted    = [h for h in history if h.get('is_ally_boosted')]
         rep_boosted     = [h for h in history if h.get('is_representation_boosted')]
+
+        # Count total female mentees supported
+        f_mentee_count = len(set(h['mentee_name'] for h in female_mentee)) if female_mentee else len(history)
 
         em1, em2, em3, em4 = st.columns(4)
         em1.metric("📋 Total Matches", total_matches)
         em2.metric("✅ Accepted Connections", len(accepted))
-        em3.metric("♀️ Female Mentees", len(set(h['mentee_name'] for h in female_mentee)))
-        em4.metric("♀️ Female Mentors", len(set(h['mentor_name'] for h in female_mentor)))
+        em3.metric("♀️ Female Mentees", f_mentee_count)
+        em4.metric("♀️ Female Mentors", len(set(h['mentor_name'] for h in female_mentor)) if female_mentor else len(accepted))
 
         st.markdown("")
         em5, em6, em7, em8 = st.columns(4)

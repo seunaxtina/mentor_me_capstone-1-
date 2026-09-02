@@ -1562,6 +1562,16 @@ def api_admin_get_audit_logs(limit: int = 100):
     except Exception:
         return []
 
+def api_admin_reseed_db():
+    headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
+    try:
+        response = api_http.post(f"{API_URL}/admin/reseed", headers=headers)
+        if response.status_code == 200:
+            return True, response.json().get("message", "Database successfully populated.")
+        return False, response.json().get("detail", "Populate failed.")
+    except Exception as e:
+        return False, str(e)
+
 def api_admin_get_algorithm_config():
     headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
     try:
@@ -6792,7 +6802,17 @@ else:
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("📑 Capstone Report & Institutional Data Hub")
-        st.caption("Generate complete academic evaluation reports, SDG 5 equity summaries, and export raw data packages ready for capstone submission and stakeholder presentation.")
+        seed_col1, seed_col2 = st.columns([3, 1])
+        with seed_col1:
+            st.caption("Generate complete academic evaluation reports, SDG 5 equity summaries, and export raw data packages ready for capstone submission and stakeholder presentation.")
+        with seed_col2:
+            if st.button("🌱 Populate/Refresh Reports Data", key="btn_admin_reseed_ui", use_container_width=True):
+                ok_re, msg_re = api_admin_reseed_db()
+                if ok_re:
+                    st.toast("✅ Platform database populated! Reloading reports...", icon="🎉")
+                    st.rerun()
+                else:
+                    st.error(msg_re)
 
         all_users = api_admin_get_users()
         audit_logs_for_rep = api_admin_get_audit_logs(limit=100) or []

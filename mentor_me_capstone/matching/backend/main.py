@@ -2958,6 +2958,64 @@ def update_algorithm_configuration(
     return {"message": "Algorithm hyperparameters successfully updated and active.", "weights": weights_dict}
 
 
+@app.post("/api/v1/admin/reseed")
+def admin_reseed_database(
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    try:
+        try:
+            from .seed import seed_db
+        except Exception:
+            from backend.seed import seed_db
+        seed_db(force_recreate=False)
+        
+        # Populate matches if none exist
+        match_count = db.query(models.Match).count()
+        if match_count == 0:
+            import random
+            mentees = db.query(models.Mentee).limit(25).all()
+            mentors = db.query(models.Mentor).limit(60).all()
+            statuses = ["ACCEPTED", "ACCEPTED", "ACCEPTED", "REQUESTED", "DECLINED"]
+            for mentee in mentees:
+                for mentor in random.sample(mentors, min(3, len(mentors))):
+                    mentee_dict = {'DevType': mentee.dev_type or '', 'YearsCodePro': mentee.years_code_pro or 1.0, 'exp_tier': mentee.exp_tier or '0-2y', 'JobFactors': mentee.job_factors or '', 'OrgSize': mentee.org_size or ''}
+                    mentor_dict = {'DevType': mentor.dev_type or '', 'YearsCodePro': mentor.years_code_pro or 5.0, 'exp_tier': mentor.exp_tier or '5-10y', 'JobFactors': mentor.job_factors or '', 'OrgSize': mentor.org_size or ''}
+                    score, breakdown = compute_match_score(mentee_dict, mentor_dict)
+                    st = random.choice(statuses)
+                    m = models.Match(
+                        id=str(uuid.uuid4()),
+                        mentee_id=mentee.id,
+                        mentor_id=mentor.id,
+                        role_score=breakdown['role'],
+                        experience_score=breakdown['experience'],
+                        career_stage_score=breakdown['career_stage'],
+                        goals_score=breakdown['goals'],
+                        practical_score=breakdown['practical'],
+                        total_score=score,
+                        match_quality=match_quality_label(score),
+                        status=st,
+                        created_at=datetime.datetime.utcnow() - datetime.timedelta(days=random.randint(1, 20))
+                    )
+                    db.add(m)
+                    if st == "ACCEPTED":
+                        n = models.MentorshipNote(
+                            id=str(uuid.uuid4()),
+                            mentor_id=mentor.id,
+                            mentee_id=mentee.id,
+                            title="1-on-1 Mentorship Session & Goal Setting",
+                            session_date=datetime.datetime.utcnow(),
+                            topics_covered="Career goals, architecture review, and code practices.",
+                            action_items="Complete project milestones and update CV.",
+                            milestone_status=random.choice(["COMPLETED", "IN_PROGRESS"])
+                        )
+                        db.add(n)
+            db.commit()
+        return {"message": "Database successfully populated with 2,000 empirical users and match records!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.post("/api/v1/matches/{match_id}/send-email", response_model=schemas.DirectEmailResponse)
 def send_direct_match_email(

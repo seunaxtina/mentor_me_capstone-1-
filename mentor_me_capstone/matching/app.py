@@ -7040,6 +7040,8 @@ else:
         if not all_users:
             st.info("No registered users retrieved.")
         else:
+            real_users_count = sum(1 for u in all_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-')))
+            synthetic_count = len(all_users) - real_users_count
             total_u = len(all_users)
             mentees_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE')
             mentors_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR')
@@ -7047,19 +7049,26 @@ else:
 
             uc1, uc2, uc3, uc4 = st.columns(4)
             uc1.metric("👥 Total Accounts", total_u)
-            uc2.metric("👩‍💻 Mentees", mentees_u)
-            uc3.metric("🧑‍🏫 Mentors", mentors_u)
+            uc2.metric("🟢 Live Real Users", real_users_count, f"{synthetic_count} Benchmark")
+            uc3.metric("👩‍💻 Mentees / Mentors", f"{mentees_u} / {mentors_u}")
             uc4.metric("🔒 2FA Enabled", two_fa_u)
 
             # Search & Filter Controls
             st.markdown("")
-            uf_c1, uf_c2 = st.columns([2, 1])
+            uf_c1, uf_c2, uf_c3 = st.columns([2, 1, 1])
             with uf_c1:
                 search_q = st.text_input("🔍 Search Users by Email, Name, or Country", placeholder="e.g. jane@example.com or Sarah").strip().lower()
             with uf_c2:
+                origin_filter = st.selectbox("Account Type", ["All Accounts", "🟢 Live Real Users", "🧪 Seeded Benchmark Data"])
+            with uf_c3:
                 role_filter = st.selectbox("Filter by Role", ["All Roles", "MENTEE", "MENTOR", "ADMIN"])
 
             filtered_users = all_users
+            if origin_filter == "🟢 Live Real Users":
+                filtered_users = [u for u in filtered_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-'))]
+            elif origin_filter == "🧪 Seeded Benchmark Data":
+                filtered_users = [u for u in filtered_users if (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-'))]
+
             if role_filter != "All Roles":
                 filtered_users = [u for u in filtered_users if (u.get('role') or '').upper() == role_filter]
             if search_q:
@@ -7082,6 +7091,11 @@ else:
                 u_country = u_item.get('country', 'Not Specified')
                 u_created = u_item.get('created_at', '').split('T')[0] if 'T' in u_item.get('created_at', '') else u_item.get('created_at', '')
 
+                is_real_user = not (u_email.endswith('@mentoring-me.demo') or u_email.endswith('@mentorme.demo') or u_id.startswith('user-uuid-'))
+                origin_badge_bg = "#e8f5e9" if is_real_user else "#fff3e0"
+                origin_badge_color = "#2e7d32" if is_real_user else "#e65100"
+                origin_badge_label = "🟢 LIVE REAL USER" if is_real_user else "🧪 BENCHMARK (SO 2020)"
+
                 badge_bg = "#e3f2fd" if u_role == "MENTEE" else ("#e8f5e9" if u_role == "MENTOR" else "#f3e5f5")
                 badge_color = "#0d47a1" if u_role == "MENTEE" else ("#1b5e20" if u_role == "MENTOR" else "#4a148c")
 
@@ -7090,6 +7104,7 @@ else:
                     with ul_c:
                         st.markdown(f"**{u_name}** (`{u_email}`)")
                         st.markdown(
+                            f"<span style='background:{origin_badge_bg}; color:{origin_badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{origin_badge_label}</span>  "
                             f"<span style='background:{badge_bg}; color:{badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{u_role}</span>  "
                             f"<span style='background:#f5f5f5; color:#424242; padding:2px 8px; border-radius:10px; font-size:0.75rem;'>{u_2fa}</span>  "
                             f"<span style='color:#757575; font-size:0.8rem;'>📍 {u_country} · Auth: {u_provider} · Registered {u_created}</span>",

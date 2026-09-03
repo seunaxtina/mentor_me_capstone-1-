@@ -25,11 +25,30 @@ LAST_NAMES = [
 
 def seed_db(force_recreate: bool = False):
     print("Initializing database tables...")
-    if force_recreate:
-        Base.metadata.drop_all(bind=engine)
+    # Always ensure tables exist (safe, uses checkfirst=True internally)
     Base.metadata.create_all(bind=engine)
-    
+
     db = SessionLocal()
+
+    if force_recreate:
+        # On PostgreSQL, drop_all + create_all causes a UniqueViolation on pg_type.
+        # Instead, safely clear all seeded data by deleting rows, preserving schema.
+        print("Clearing existing seeded data (truncating rows)...")
+        try:
+            db.query(models.MentorshipNote).delete(synchronize_session=False)
+            db.query(models.Match).delete(synchronize_session=False)
+            db.query(models.Mentee).delete(synchronize_session=False)
+            db.query(models.Mentor).delete(synchronize_session=False)
+            # Delete all non-admin seeded users (those with @mentoring-me.demo emails except admin)
+            db.query(models.User).filter(
+                models.User.email.like("%@mentoring-me.demo%"),
+                models.User.role != "ADMIN"
+            ).delete(synchronize_session=False)
+            db.commit()
+            print("Existing seeded data cleared.")
+        except Exception as e:
+            db.rollback()
+            print(f"Warning: Could not clear data: {e}")
     
     # Locate the CSV file
     csv_paths = [

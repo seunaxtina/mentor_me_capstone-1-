@@ -1531,6 +1531,7 @@ def api_reset_database():
     except Exception as e:
         return False, f"Error reaching API: {str(e)}"
 
+@st.cache_data(ttl=15)
 def api_admin_get_users():
     headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
     try:

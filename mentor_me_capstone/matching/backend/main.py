@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, B
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Dict
 import pandas as pd
 import datetime
@@ -2789,10 +2789,14 @@ def reset_database(
 
 @app.get("/api/v1/admin/users")
 def get_all_registered_users(
+    limit: int = 500,
     current_user: models.User = Depends(auth.require_role(["ADMIN"])),
     db: Session = Depends(get_db)
 ):
-    users = db.query(models.User).order_by(models.User.created_at.desc()).all()
+    users = db.query(models.User).options(
+        joinedload(models.User.mentee_profile),
+        joinedload(models.User.mentor_profile)
+    ).order_by(models.User.created_at.desc()).limit(limit).all()
     results = []
     for u in users:
         display_name = u.name

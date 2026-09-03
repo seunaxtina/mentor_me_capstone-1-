@@ -6657,9 +6657,9 @@ else:
         rep_rate = f"{int(round(len(rep_boosted)/total_matches*100))}%" if total_matches else "N/A"
         avg_score = f"{int(round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100))}%" if accepted else "N/A"
         
-        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections: female mentee → female mentor")
-        em6.metric("🤝 Female-Male Ally Match Rate", fm_ally_rate, help="% of accepted connections: female mentee → male ally mentor")
-        em7.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied")
+        em5.metric("🌟 Female-Female Match Rate", ff_rate, help="% of accepted connections: female mentee → female mentor (peer role-model pairings)")
+        em6.metric("🔀 Cross-Gender Pairing Rate", fm_ally_rate, help="% of accepted connections: female mentee → male mentor (cross-gender pairings)")
+        em7.metric("🤝 D&I Ally Boost Rate", ally_rate, help="% of all matches where the D&I Ally boost was applied. D&I Allies can be any gender — female senior engineers championing junior women are also D&I allies.")
         em8.metric("📈 Avg. Accepted Score", avg_score)
 
         # Match Quality & Confidence Score Distribution
@@ -6905,7 +6905,7 @@ else:
                 "Female Mentees Count",
                 "Female Mentors Count",
                 "Female-Female Pairing Rate",
-                "Female-Male Ally Pairing Rate",
+                "Cross-Gender Pairing Rate",
                 "D&I Ally Boost Adoption Rate",
                 "Gender Representation Boost Rate",
                 "Average Accepted Match Compatibility Score",

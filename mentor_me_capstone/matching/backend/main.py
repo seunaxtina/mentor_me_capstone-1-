@@ -2900,6 +2900,103 @@ def get_security_audit_logs(
     return results
 
 
+@app.post("/api/v1/admin/reseed")
+@app.post("/api/v1/admin/reset")
+def reseed_database_api(
+    current_user: models.User = Depends(auth.require_role(["ADMIN"])),
+    db: Session = Depends(get_db)
+):
+    try:
+        from backend.seed import seed_db
+        seed_db(force_recreate=True)
+        
+        # Populate sample matches with 50/50 female and male mentors
+        mentees = db.query(models.Mentee).limit(20).all()
+        female_mentors = db.query(models.Mentor).filter(models.Mentor.gender == "Woman").limit(25).all()
+        male_mentors = db.query(models.Mentor).filter(models.Mentor.gender == "Man").limit(25).all()
+        mentors = female_mentors + male_mentors
+        import random, uuid
+        random.shuffle(mentors)
+        
+        statuses = ["ACCEPTED", "ACCEPTED", "ACCEPTED", "REQUESTED", "DECLINED"]
+        matches_created = 0
+        for mentee in mentees:
+            mentor_scores = []
+            for mentor in mentors:
+                mentee_dict = {
+                    'DevType': mentee.dev_type or '',
+                    'YearsCodePro': mentee.years_code_pro or 1.0,
+                    'exp_tier': mentee.exp_tier or '0-2y',
+                    'JobFactors': mentee.job_factors or '',
+                    'OrgSize': mentee.org_size or ''
+                }
+                mentor_dict = {
+                    'DevType': mentor.dev_type or '',
+                    'YearsCodePro': mentor.years_code_pro or 5.0,
+                    'exp_tier': mentor.exp_tier or '5-10y',
+                    'JobFactors': mentor.job_factors or '',
+                    'OrgSize': mentor.org_size or ''
+                }
+                score, breakdown = compute_match_score(mentee_dict, mentor_dict)
+                mentor_scores.append((mentor, score, breakdown))
+                
+            mentor_scores.sort(key=lambda x: x[1], reverse=True)
+            top_pairs = mentor_scores[:2]
+            for mentor, score, breakdown in top_pairs:
+                match_id = str(uuid.uuid4())
+                status = random.choice(statuses)
+                created_dt = datetime.datetime.utcnow() - datetime.timedelta(days=random.randint(1, 30))
+                existing = db.query(models.Match).filter(
+                    models.Match.mentee_id == mentee.id,
+                    models.Match.mentor_id == mentor.id
+                ).first()
+                if not existing:
+                    match = models.Match(
+                        id=match_id,
+                        mentee_id=mentee.id,
+                        mentor_id=mentor.id,
+                        role_score=breakdown['role'],
+                        experience_score=breakdown['experience'],
+                        career_stage_score=breakdown['career_stage'],
+                        goals_score=breakdown['goals'],
+                        practical_score=breakdown['practical'],
+                        total_score=score,
+                        match_quality=match_quality_label(score),
+                        status=status,
+                        created_at=created_dt
+                    )
+                    db.add(match)
+                    matches_created += 1
+                    
+                    if status == "ACCEPTED":
+                        note = models.MentorshipNote(
+                            id=str(uuid.uuid4()),
+                            mentor_id=mentor.id,
+                            mentee_id=mentee.id,
+                            title="1-on-1 Strategy Session & Career Review",
+                            session_date=created_dt + datetime.timedelta(days=2),
+                            topics_covered="Discussed technical onboarding, architecture patterns, and portfolio projects.",
+                            action_items="Complete code review checklist & update LinkedIn profile.",
+                            milestone_status=random.choice(["COMPLETED", "IN_PROGRESS"]),
+                            created_at=created_dt,
+                            updated_at=created_dt
+                        )
+                        db.add(note)
+        db.commit()
+        log_security_event(
+            db,
+            event_type="DATABASE_RESEEDED",
+            user_email=current_user.email,
+            user_id=current_user.id,
+            status="SUCCESS",
+            details=f"Database successfully reseeded with {matches_created} balanced sample matches."
+        )
+        return {"message": f"Database successfully reseeded with {matches_created} balanced sample matches!"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database reseed failed: {str(e)}")
+
+
 @app.get("/api/v1/admin/algorithm-config")
 def get_algorithm_configuration(
     current_user: models.User = Depends(auth.require_role(["ADMIN"])),

@@ -6590,52 +6590,59 @@ else:
             (u.get('email') or '').lower() for u in all_users_raw if not _is_demo_usr(u) and u.get('email')
         }
 
-        def _is_demo_mtch(m_obj):
+        def _is_real_mtch(m_obj):
             if not isinstance(m_obj, dict):
                 return False
             m_id = str(m_obj.get('id') or '')
+            if m_id.startswith('match_') or m_id.startswith('mtch_demo_') or m_id.startswith('user-uuid-'):
+                return False
             m_eid = str(m_obj.get('mentee_id') or '')
             r_eid = str(m_obj.get('mentor_id') or '')
             m_em = (m_obj.get('mentee_email') or '').lower()
             r_em = (m_obj.get('mentor_email') or '').lower()
             
             if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo') or m_em.endswith('@mentorme.demo') or r_em.endswith('@mentorme.demo'):
-                return True
-            if m_eid.startswith('user-uuid-') or r_eid.startswith('user-uuid-') or m_id.startswith('match_') or m_id.startswith('mtch_demo_'):
-                return True
-                
-            if (m_eid not in real_u_ids and m_em not in real_u_emails) and (r_eid not in real_u_ids and r_em not in real_u_emails):
-                return True
-            return False
+                return False
+            if m_eid.startswith('user-uuid-') or r_eid.startswith('user-uuid-'):
+                return False
 
-        def _is_demo_note(n_obj):
+            is_mentee_real = (m_eid in real_u_ids) or (m_em in real_u_emails)
+            is_mentor_real = (r_eid in real_u_ids) or (r_em in real_u_emails)
+            return is_mentee_real and is_mentor_real
+
+        def _is_demo_mtch(m_obj):
+            return not _is_real_mtch(m_obj)
+
+        def _is_real_note(n_obj):
             if not isinstance(n_obj, dict):
                 return False
             m_eid = str(n_obj.get('mentee_id') or '')
             r_eid = str(n_obj.get('mentor_id') or '')
             if m_eid.startswith('user-uuid-') or r_eid.startswith('user-uuid-'):
-                return True
-            if m_eid not in real_u_ids and r_eid not in real_u_ids:
-                return True
-            return False
+                return False
+            return (m_eid in real_u_ids) and (r_eid in real_u_ids)
 
-        def _is_demo_audit(a_obj):
+        def _is_demo_note(n_obj):
+            return not _is_real_note(n_obj)
+
+        def _is_real_audit(a_obj):
             if not isinstance(a_obj, dict):
                 return False
             em = (a_obj.get('user_email') or '').lower()
             uid = str(a_obj.get('user_id') or '')
             if em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-'):
-                return True
-            if uid and uid not in real_u_ids and em and em not in real_u_emails:
-                return True
-            return False
+                return False
+            return (uid in real_u_ids) or (em in real_u_emails)
+
+        def _is_demo_audit(a_obj):
+            return not _is_real_audit(a_obj)
 
         # Apply scope filtering globally
         if admin_global_scope == "🟢 Live Registered Users Only":
             all_users = [u for u in all_users_raw if not _is_demo_usr(u)]
-            history = [m for m in history_raw if not _is_demo_mtch(m)]
-            all_notes = [n for n in all_notes_raw if not _is_demo_note(n)]
-            audit_logs = [a for a in audit_logs_raw if not _is_demo_audit(a)]
+            history = [m for m in history_raw if _is_real_mtch(m)]
+            all_notes = [n for n in all_notes_raw if _is_real_note(n)]
+            audit_logs = [a for a in audit_logs_raw if _is_real_audit(a)]
         elif admin_global_scope == "🔬 Benchmark Demo Accounts Only":
             all_users = [u for u in all_users_raw if _is_demo_usr(u)]
             history = [m for m in history_raw if _is_demo_mtch(m)]

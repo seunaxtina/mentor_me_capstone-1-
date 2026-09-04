@@ -6640,7 +6640,13 @@ else:
         # Apply scope filtering globally
         if admin_global_scope == "🟢 Live Registered Users Only":
             all_users = [u for u in all_users_raw if not _is_demo_usr(u)]
-            history = [m for m in history_raw if _is_real_mtch(m)]
+            # Exclude PROPOSED matches from live scope — these are auto-generated algorithm
+            # recommendations that have NOT been explicitly requested or accepted by any user.
+            # Only count REQUESTED, ACCEPTED or DECLINED matches as real match activity.
+            history = [
+                m for m in history_raw
+                if _is_real_mtch(m) and (m.get('status') or '').upper() != 'PROPOSED'
+            ]
             all_notes = [n for n in all_notes_raw if _is_real_note(n)]
             audit_logs = [a for a in audit_logs_raw if _is_real_audit(a)]
         elif admin_global_scope == "🔬 Benchmark Demo Accounts Only":
@@ -7115,6 +7121,11 @@ else:
                 badge_bg = "#e3f2fd" if u_role == "MENTEE" else ("#e8f5e9" if u_role == "MENTOR" else "#f3e5f5")
                 badge_color = "#0d47a1" if u_role == "MENTEE" else ("#1b5e20" if u_role == "MENTOR" else "#4a148c")
 
+                # "Not Specified" means the user registered but has not yet filled in their
+                # gender in Profile Settings — it is NOT a derived or assumed value.
+                gender_display = u_gender
+                if u_gender in ("Not Specified", "Not stated", None, ""):
+                    gender_display = "Not Set in Profile" if is_real_user else (u_gender or "Not Specified")
                 g_icon = "♀️" if u_gender == "Female" else ("♂️" if u_gender == "Male" else "👤")
                 g_bg = "#fce4ec" if u_gender == "Female" else ("#e3f2fd" if u_gender == "Male" else "#f5f5f5")
                 g_color = "#880e4f" if u_gender == "Female" else ("#0d47a1" if u_gender == "Male" else "#424242")
@@ -7126,7 +7137,7 @@ else:
                         st.markdown(
                             f"<span style='background:{origin_badge_bg}; color:{origin_badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{origin_badge_label}</span>  "
                             f"<span style='background:{badge_bg}; color:{badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{u_role}</span>  "
-                            f"<span style='background:{g_bg}; color:{g_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{g_icon} {u_gender}</span>  "
+                            f"<span style='background:{g_bg}; color:{g_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{g_icon} {gender_display}</span>  "
                             f"<span style='background:#f5f5f5; color:#424242; padding:2px 8px; border-radius:10px; font-size:0.75rem;'>{u_2fa}</span>  "
                             f"<span style='color:#757575; font-size:0.8rem;'>📍 {u_country} · Auth: {u_provider} · Registered {u_created}</span>",
                             unsafe_allow_html=True

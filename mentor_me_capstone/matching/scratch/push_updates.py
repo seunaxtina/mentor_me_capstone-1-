@@ -8,7 +8,7 @@ print("Staging files...")
 subprocess.run([git_bin, "add", "."], cwd=repo_dir)
 
 print("Committing...")
-res_commit = subprocess.run([git_bin, "commit", "-m", "fix: enforce strict _is_real_mtch requiring both participants to be live registered users"], cwd=repo_dir, capture_output=True, text=True)
+res_commit = subprocess.run([git_bin, "commit", "-m", "fix: exclude PROPOSED matches from admin Live scope count; clarify gender 'Not Set in Profile' label for real users"], cwd=repo_dir, capture_output=True, text=True)
 print(res_commit.stdout or res_commit.stderr)
 
 print("Pushing to origin main...")

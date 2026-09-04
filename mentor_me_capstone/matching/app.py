@@ -6546,88 +6546,87 @@ else:
                         else:
                             st.error(res)
 
-            # ── Inline Email Designer ─────────────────────────────────────────
-            if 'latest_colleague_nomination' in st.session_state:
-                cnom = st.session_state['latest_colleague_nomination']
-                c_invite_link = f"{get_app_base_url()}/?invite_code={cnom['invite_code']}"
-                st.markdown("---")
-                st.markdown("### ✉️ Colleague Invitation Email Designer")
-                st.caption("Personalize this warm invitation message before sending it to your colleague.")
-                
-                c_email_template = (
-                    f"Hi {cnom['mentor_name']},\n\n"
-                    f"I hope you're having a great week!\n\n"
-                    f"I am currently mentoring on Mentoring-Me — an equitable mentorship pairing platform dedicated to "
-                    f"connecting and empowering early-career women in technical fields (aligned with UN SDG 5).\n\n"
-                    f"Given your strong expertise in {cnom['tech_focus']}, I thought of you immediately and know you would make "
-                    f"an incredible mentor and role model for talented junior engineers and researchers on the platform.\n\n"
-                    f"You have full control over your capacity (e.g. 1 mentee at a time, 25-minute syncs). "
-                    f"I've generated a direct invitation link for you to set up a mentor profile:\n\n"
-                    f"{c_invite_link}\n\n"
-                    f"I'd love to have you in the mentor community alongside me!\n\n"
-                    f"Best regards,\n{mentor.get('name', 'Your Colleague')}"
-                )
-                
-                c_outreach_msg = st.text_area("Invitation Email Body:", value=c_email_template, height=220, key=f"drafted_colleague_msg_{cnom['id']}")
-                c_inv_subj = f"Mentorship Invitation: Join me on Mentoring-Me — {mentor.get('name', 'A Colleague')}"
-                c_mailto_url = f"mailto:{cnom['mentor_contact']}?subject={_up_nom.quote(c_inv_subj)}&body={_up_nom.quote(c_outreach_msg)}"
-                
-                c_btn1, c_btn2 = st.columns(2)
-                with c_btn1:
-                    if st.button("✉️ Send Invitation Email", key=f"send_colleague_nom_btn_{cnom['id']}", use_container_width=True):
-                        ok_cn, res_cn = api_send_nomination_followup(cnom['id'], c_outreach_msg, c_inv_subj)
-                        if ok_cn:
-                            st.success(f"✅ Invitation email successfully dispatched to {cnom['mentor_name']} ({cnom['mentor_contact']})!")
-                        else:
-                            st.error(res_cn)
-                with c_btn2:
-                    if st.button("✖ Close Email Designer", key="close_colleague_designer_btn", use_container_width=True):
-                        del st.session_state['latest_colleague_nomination']
-                        st.rerun()
-                st.caption(f"🔗 Colleague Invite Code: `{cnom['invite_code']}` · Direct Link: `{c_invite_link}`")
-
-            # ── Section 2: My Nominated Colleagues Tracking Log ──────────────
-            st.markdown("---")
-            st.markdown("### 📋 My Nominated Colleagues")
-            colleague_noms = api_get_nominations() or []
-            if not colleague_noms:
-                st.info("You haven't nominated any colleagues yet. Use the form above to invite peers to join as mentors.")
-            else:
-                st.caption(f"You have nominated **{len(colleague_noms)} colleague(s)** to join as mentors.")
-                for cn_idx, c_item in enumerate(colleague_noms):
-                    c_status = c_item.get('status', 'PENDING')
-                    c_badge_bg = "#d4edda" if c_status == "ACCEPTED" else "#fff3cd"
-                    c_badge_color = "#155724" if c_status == "ACCEPTED" else "#856404"
-                    c_date = c_item.get('created_at', '').split('T')[0] if 'T' in c_item.get('created_at', '') else c_item.get('created_at', '')
-                    
-                    with st.container(border=True):
-                        cn_l, cn_r = st.columns([3, 1])
-                        with cn_l:
-                            st.markdown(f"##### {c_item['mentor_name']}")
-                            st.caption(f"📧 `{c_item['mentor_contact']}`  ·  🎯 {c_item['tech_focus']}")
-                            st.markdown(
-                                f"<span style='background:{c_badge_bg}; color:{c_badge_color}; padding:3px 10px; "
-                                f"border-radius:12px; font-size:0.8rem; font-weight:600;'>{c_status}</span>"
-                                f"  <span style='color:#6c757d; font-size:0.8rem;'>· Invited on {c_date}</span>",
-                                unsafe_allow_html=True
-                            )
-                        with cn_r:
-                            st.markdown(
-                                f"<div style='text-align:center; background:#f8f9fa; border-radius:8px; padding:6px;'>"
-                                f"<span style='font-size:0.75rem; color:#6c757d;'>Invite Code</span><br/>"
-                                f"<code style='font-weight:700; font-size:0.9rem;'>{c_item['invite_code']}</code></div>",
-                                unsafe_allow_html=True
-                            )
-
-    elif role == "ADMIN":
+            # ── Inline Email Des    elif role == "ADMIN":
         st.header("🛡️ Administrator Dashboard")
-        st.caption("Platform-wide oversight, equity analytics, and system tools.")
+        st.caption("Platform-wide oversight, equity analytics, security telemetry, and data governance.")
 
-        history = api_get_match_history() or []
+        # Fetch base raw datasets
+        all_users_raw = api_admin_get_users() or []
+        history_raw = api_get_match_history() or []
+        all_notes_raw = api_get_notes() or []
+        audit_logs_raw = api_admin_get_audit_logs(limit=100) or []
+
+        # ════════════════════════════════════════════════════════════════════
+        # GLOBAL SCOPE SELECTOR — Controls All Admin Sections & Exports
+        # ════════════════════════════════════════════════════════════════════
+        st.markdown("##### 🌐 Global Dashboard Analytics & Export Scope")
+        admin_global_scope = st.radio(
+            "Filter all dashboard analytics, logs, and exports by scope:",
+            ["🟢 Live Registered Users Only", "🧪 Combined Dataset (Real Users + SO2020 Benchmark)", "🔬 Benchmark Demo Accounts Only"],
+            index=1,
+            horizontal=True,
+            key="admin_global_scope_radio",
+            help="Toggling this filter immediately updates Equity Analytics, Matches Logs, Milestones Tracker, Security Telemetry, and Data Exports across the entire dashboard."
+        )
+
+        demo_u_ids = {
+            u['id'] for u in all_users_raw
+            if (u.get('email') or '').endswith('@mentoring-me.demo')
+            or (u.get('email') or '').endswith('@mentorme.demo')
+            or (u.get('id') or '').startswith('user-uuid-')
+        }
+
+        def _is_demo_usr(u_obj):
+            if not isinstance(u_obj, dict):
+                return False
+            em = u_obj.get('email') or ''
+            uid = u_obj.get('id') or ''
+            return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-')
+
+        def _is_demo_mtch(m_obj):
+            if not isinstance(m_obj, dict):
+                return False
+            m_em = m_obj.get('mentee_email') or ''
+            r_em = m_obj.get('mentor_email') or ''
+            if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo'):
+                return True
+            return m_obj.get('mentee_id') in demo_u_ids or m_obj.get('mentor_id') in demo_u_ids
+
+        def _is_demo_note(n_obj):
+            if not isinstance(n_obj, dict):
+                return False
+            return n_obj.get('mentee_id') in demo_u_ids or n_obj.get('mentor_id') in demo_u_ids
+
+        def _is_demo_audit(a_obj):
+            if not isinstance(a_obj, dict):
+                return False
+            em = a_obj.get('user_email') or ''
+            uid = a_obj.get('user_id') or ''
+            return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid in demo_u_ids or uid.startswith('user-uuid-')
+
+        # Apply scope filtering globally
+        if admin_global_scope == "🟢 Live Registered Users Only":
+            all_users = [u for u in all_users_raw if not _is_demo_usr(u)]
+            history = [m for m in history_raw if not _is_demo_mtch(m)]
+            all_notes = [n for n in all_notes_raw if not _is_demo_note(n)]
+            audit_logs = [a for a in audit_logs_raw if not _is_demo_audit(a)]
+        elif admin_global_scope == "🔬 Benchmark Demo Accounts Only":
+            all_users = [u for u in all_users_raw if _is_demo_usr(u)]
+            history = [m for m in history_raw if _is_demo_mtch(m)]
+            all_notes = [n for n in all_notes_raw if _is_demo_note(n)]
+            audit_logs = [a for a in audit_logs_raw if _is_demo_audit(a)]
+        else:
+            all_users = all_users_raw
+            history = history_raw
+            all_notes = all_notes_raw
+            audit_logs = audit_logs_raw
+
+        st.caption(f"📊 Dashboard Active Scope: `{admin_global_scope}` — Displaying **{len(all_users)} Users**, **{len(history)} Matches**, **{len(all_notes)} Sessions**, and **{len(audit_logs)} Security Events**.")
 
         # ════════════════════════════════════════════════════════════════════
         # SECTION A — Equity Analytics Dashboard
         # ════════════════════════════════════════════════════════════════════
+        st.markdown("---")
         st.subheader("📊 Equity Impact Analytics")
         st.caption("Live metrics measuring the platform's progress toward equitable mentorship for early-career women in tech (SDG 5).")
 
@@ -6693,10 +6692,10 @@ else:
                 st.markdown("**Career Stage Distribution of Mentees**")
                 tier_counts = {}
                 for h in history:
-                    tier = h.get('mentee_exp_tier') or 'Unknown'
-                    tier_counts[tier] = tier_counts.get(tier, 0) + 1
+                    t = h.get('mentee_exp_tier') or 'Unknown'
+                    tier_counts[t] = tier_counts.get(t, 0) + 1
                 if tier_counts:
-                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Count']).sort_values('Count', ascending=False)
+                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=['Career Stage', 'Mentees']).sort_values('Mentees', ascending=False)
                     st.bar_chart(tier_df.set_index('Career Stage'))
             with ch_col3:
                 st.markdown("**Country Diversity of Matched Mentors**")
@@ -6714,7 +6713,7 @@ else:
         st.markdown("---")
         st.subheader("📋 Global Platform Matches Log")
         if not history:
-            st.info("No match transactions exist in the database.")
+            st.info(f"No match transactions exist in the database under scope `{admin_global_scope}`.")
         else:
             admin_list = []
             for h in history:
@@ -6742,7 +6741,6 @@ else:
         st.subheader("📈 Mentorship Health & Milestones Progress Tracker")
         st.caption("Live monitoring of ongoing 1-on-1 sessions, homework task completion, and long-term mentee milestones logged across all pairings.")
         
-        all_notes = api_get_notes() or []
         n_total = len(all_notes)
         n_completed = sum(1 for n in all_notes if n.get('milestone_status') == 'COMPLETED')
         n_in_progress = sum(1 for n in all_notes if n.get('milestone_status') == 'IN_PROGRESS')
@@ -6773,7 +6771,7 @@ else:
                     })
                 st.dataframe(pd.DataFrame(notes_table), use_container_width=True)
         else:
-            st.info("No mentorship sessions or milestones logged yet. As mentors record 1-on-1 meetings in the **Milestones & Notes** tab, longitudinal progress will appear here.")
+            st.info(f"No mentorship sessions or milestones logged under scope `{admin_global_scope}`.")
 
         # ════════════════════════════════════════════════════════════════════
         # SECTION C — Dynamic Algorithm Weight Tuning (Live Hyperparameters)
@@ -6842,56 +6840,12 @@ else:
                 else:
                     st.error(msg_re)
 
-        all_users = api_admin_get_users() or []
-        audit_logs_for_rep = api_admin_get_audit_logs(limit=100) or []
+        export_target_scope = admin_global_scope
+        all_users_exp = all_users
+        history_exp = history
 
-        st.markdown("##### 🎯 Select Target Data Scope for Exports")
-        export_target_scope = st.radio(
-            "Filter data scope to export:",
-            ["🟢 Live Registered Users Only", "🧪 Combined Dataset (Real Users + Benchmark Demo)", "🔬 Benchmark Demo Accounts Only"],
-            index=1,
-            horizontal=True,
-            key="export_target_scope_radio",
-            help="Select 'Live Registered Users Only' to export clean production data without synthetic benchmark accounts."
-        )
-
-        demo_u_ids = {
-            u['id'] for u in all_users 
-            if (u.get('email') or '').endswith('@mentoring-me.demo') 
-            or (u.get('email') or '').endswith('@mentorme.demo') 
-            or (u.get('id') or '').startswith('user-uuid-')
-        }
-
-        def _is_demo_usr(u_obj):
-            if not isinstance(u_obj, dict):
-                return False
-            em = u_obj.get('email') or ''
-            uid = u_obj.get('id') or ''
-            return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-')
-
-        def _is_demo_mtch(m_obj):
-            if not isinstance(m_obj, dict):
-                return False
-            m_em = m_obj.get('mentee_email') or ''
-            r_em = m_obj.get('mentor_email') or ''
-            if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo'):
-                return True
-            return m_obj.get('mentee_id') in demo_u_ids or m_obj.get('mentor_id') in demo_u_ids
-
-        if export_target_scope == "🟢 Live Registered Users Only":
-            all_users_exp = [u for u in all_users if not _is_demo_usr(u)]
-            history_exp = [m for m in history if not _is_demo_mtch(m)]
-        elif export_target_scope == "🔬 Benchmark Demo Accounts Only":
-            all_users_exp = [u for u in all_users if _is_demo_usr(u)]
-            history_exp = [m for m in history if _is_demo_mtch(m)]
-        else:
-            all_users_exp = all_users
-            history_exp = history
-
-        st.caption(f"Currently exporting: **{len(all_users_exp)} Users** and **{len(history_exp)} Match Records** under scope `{export_target_scope}`.")
-        
         # Compile Capstone Report Markdown
-        capstone_report_md = generate_capstone_executive_report(history_exp, all_users_exp, audit_logs_for_rep, all_notes, current_cfg)
+        capstone_report_md = generate_capstone_executive_report(history_exp, all_users_exp, audit_logs, all_notes, current_cfg)
         
         # Compile Evaluation JSON
         capstone_eval_json = json.dumps({
@@ -7018,11 +6972,10 @@ else:
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("🛡️ Security Telemetry & Real-Time Audit Logs")
-        st.caption("Live security monitoring, 2FA delivery verification, session authentication tracking, and administrative event auditing.")
+        st.caption(f"Live security monitoring, 2FA delivery verification, and event auditing scoped to `{admin_global_scope}`.")
 
-        audit_logs = api_admin_get_audit_logs(limit=50)
         if not audit_logs:
-            st.info("No security audit logs recorded yet. Events will appear here as users log in, verify 2FA, or perform account actions.")
+            st.info(f"No security audit logs recorded under scope `{admin_global_scope}`.")
         else:
             total_events = len(audit_logs)
             logins_ok = sum(1 for l in audit_logs if l.get('event_type') == 'LOGIN_SUCCESS')
@@ -7053,7 +7006,7 @@ else:
         # ════════════════════════════════════════════════════════════════════
         st.markdown("---")
         st.subheader("👥 Registered User & Credential Management")
-        st.caption("Inspect real registered accounts, monitor authentication status, and permanently revoke credentials or delete accounts (GDPR Compliance).")
+        st.caption(f"Inspect registered accounts, monitor authentication status, and manage users scoped to `{admin_global_scope}`.")
 
         if not all_users:
             st.info("No registered users retrieved.")

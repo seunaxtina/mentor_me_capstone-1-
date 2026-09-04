@@ -4463,8 +4463,11 @@ else:
                     with col5:
                         org_size = st.selectbox("Organization Size", ORG_SIZES, index=ORG_SIZES.index(mentee['org_size']) if mentee['org_size'] in ORG_SIZES else 0)
                     with col6:
-                        gender = st.selectbox("Gender (Voluntary)", ["Not stated", "Female", "Male", "Non-binary"], index=["Not stated", "Female", "Male", "Non-binary"].index(mentee.get('gender') or "Not stated"))
-                        st.caption("Sharing your gender (optionally) helps us connect you with senior women in tech as role models via our representation-aware matching. This is never required and has no negative effect if left as 'Not stated'.")
+                        g_opts = ["Female", "Male", "Non-binary"]
+                        cur_g = mentee.get('gender')
+                        g_idx = g_opts.index(cur_g) if cur_g in g_opts else 0
+                        gender = st.selectbox("Gender", g_opts, index=g_idx)
+                        st.caption("Sharing your gender helps us connect you with senior women in tech as role models via our representation-aware matching.")
 
                     # Roles
                     current_roles = [r.strip() for r in mentee['dev_type'].split(";")] if mentee['dev_type'] else []
@@ -4581,7 +4584,7 @@ else:
                             "job_factors": ";".join(picked_factors),
                             "org_size": org_size,
                             "additional_details": additional_details,
-                            "gender": gender if gender != "Not stated" else None,
+                            "gender": gender,
                             "target_mentor_expertise": ", ".join(cleaned_kws),
                             "target_mentor_country": "; ".join(target_mentor_countries) if target_mentor_countries else None,
                             "target_mentor_min_years": target_mentor_min_years,
@@ -5894,7 +5897,10 @@ else:
                     with col5:
                         org_size = st.selectbox("Organization Size", ORG_SIZES, index=ORG_SIZES.index(mentor['org_size']) if mentor['org_size'] in ORG_SIZES else 0)
                     with col6:
-                        gender = st.selectbox("Gender (Voluntary)", ["Not stated", "Female", "Male", "Non-binary"], index=["Not stated", "Female", "Male", "Non-binary"].index(mentor.get('gender') or "Not stated"))
+                        g_opts_m = ["Female", "Male", "Non-binary"]
+                        cur_g_m = mentor.get('gender')
+                        g_idx_m = g_opts_m.index(cur_g_m) if cur_g_m in g_opts_m else 0
+                        gender = st.selectbox("Gender", g_opts_m, index=g_idx_m)
 
                     current_roles = [r.strip() for r in mentor['dev_type'].split(";")] if mentor['dev_type'] else []
                     valid_current_roles = [r for r in current_roles if r in ALL_ROLES]
@@ -5974,7 +5980,7 @@ else:
                         "max_mentees": max_mentees,
                         "additional_details": additional_details,
                         "contact_link": contact_link,
-                        "gender": gender if gender != "Not stated" else None,
+                        "gender": gender,
                         "timezone": timezone,
                         "linkedin_link": linkedin_link.strip() if linkedin_link else None
                     }

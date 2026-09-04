@@ -6576,40 +6576,59 @@ else:
             help="Toggling this filter immediately updates Equity Analytics, Matches Logs, Milestones Tracker, Security Telemetry, and Data Exports across the entire dashboard."
         )
 
-        demo_u_ids = {
-            u['id'] for u in all_users_raw
-            if (u.get('email') or '').endswith('@mentoring-me.demo')
-            or (u.get('email') or '').endswith('@mentorme.demo')
-            or (u.get('id') or '').startswith('user-uuid-')
-        }
-
         def _is_demo_usr(u_obj):
             if not isinstance(u_obj, dict):
                 return False
-            em = u_obj.get('email') or ''
-            uid = u_obj.get('id') or ''
+            em = (u_obj.get('email') or '').lower()
+            uid = str(u_obj.get('id') or '')
             return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-')
+
+        real_u_ids = {
+            str(u['id']) for u in all_users_raw if not _is_demo_usr(u) and u.get('id')
+        }
+        real_u_emails = {
+            (u.get('email') or '').lower() for u in all_users_raw if not _is_demo_usr(u) and u.get('email')
+        }
 
         def _is_demo_mtch(m_obj):
             if not isinstance(m_obj, dict):
                 return False
-            m_em = m_obj.get('mentee_email') or ''
-            r_em = m_obj.get('mentor_email') or ''
-            if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo'):
+            m_id = str(m_obj.get('id') or '')
+            m_eid = str(m_obj.get('mentee_id') or '')
+            r_eid = str(m_obj.get('mentor_id') or '')
+            m_em = (m_obj.get('mentee_email') or '').lower()
+            r_em = (m_obj.get('mentor_email') or '').lower()
+            
+            if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo') or m_em.endswith('@mentorme.demo') or r_em.endswith('@mentorme.demo'):
                 return True
-            return m_obj.get('mentee_id') in demo_u_ids or m_obj.get('mentor_id') in demo_u_ids
+            if m_eid.startswith('user-uuid-') or r_eid.startswith('user-uuid-') or m_id.startswith('match_') or m_id.startswith('mtch_demo_'):
+                return True
+                
+            if (m_eid not in real_u_ids and m_em not in real_u_emails) and (r_eid not in real_u_ids and r_em not in real_u_emails):
+                return True
+            return False
 
         def _is_demo_note(n_obj):
             if not isinstance(n_obj, dict):
                 return False
-            return n_obj.get('mentee_id') in demo_u_ids or n_obj.get('mentor_id') in demo_u_ids
+            m_eid = str(n_obj.get('mentee_id') or '')
+            r_eid = str(n_obj.get('mentor_id') or '')
+            if m_eid.startswith('user-uuid-') or r_eid.startswith('user-uuid-'):
+                return True
+            if m_eid not in real_u_ids and r_eid not in real_u_ids:
+                return True
+            return False
 
         def _is_demo_audit(a_obj):
             if not isinstance(a_obj, dict):
                 return False
-            em = a_obj.get('user_email') or ''
-            uid = a_obj.get('user_id') or ''
-            return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid in demo_u_ids or uid.startswith('user-uuid-')
+            em = (a_obj.get('user_email') or '').lower()
+            uid = str(a_obj.get('user_id') or '')
+            if em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-'):
+                return True
+            if uid and uid not in real_u_ids and em and em not in real_u_emails:
+                return True
+            return False
 
         # Apply scope filtering globally
         if admin_global_scope == "🟢 Live Registered Users Only":

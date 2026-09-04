@@ -7008,36 +7008,23 @@ else:
         st.subheader("👥 Registered User & Credential Management")
         st.caption(f"Inspect registered accounts, monitor authentication status, and manage users scoped to `{admin_global_scope}`.")
 
-        if not all_users:
+        if not all_users_raw:
             st.info("No registered users retrieved.")
         else:
-            real_users_count = sum(1 for u in all_users if not _is_demo_usr(u))
-            synthetic_count = len(all_users) - real_users_count
-            total_u = len(all_users)
-            mentees_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE')
-            mentors_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR')
-            two_fa_u  = sum(1 for u in all_users if u.get('two_factor_enabled'))
-
-            uc1, uc2, uc3, uc4 = st.columns(4)
-            uc1.metric("👥 Total Accounts", total_u)
-            uc2.metric("🟢 Live Real Users", real_users_count, f"{synthetic_count} Benchmark")
-            uc3.metric("👩‍💻 Mentees / Mentors", f"{mentees_u} / {mentors_u}")
-            uc4.metric("🔒 2FA Enabled", two_fa_u)
-
             # Search & Filter Controls
-            st.markdown("")
             uf_c1, uf_c2, uf_c3 = st.columns([2, 1, 1])
             with uf_c1:
-                search_q = st.text_input("🔍 Search Users by Email, Name, or Country", placeholder="e.g. jane@example.com or Sarah").strip().lower()
+                search_q = st.text_input("🔍 Search Users by Email, Name, or Country", placeholder="e.g. jane@example.com or Sarah", key="user_search_query_input").strip().lower()
             with uf_c2:
-                origin_filter = st.selectbox("Account Type", ["All Accounts", "🟢 Live Real Users", "🧪 Seeded Benchmark Data"])
+                default_origin_idx = 1 if admin_global_scope == "🟢 Live Registered Users Only" else (2 if admin_global_scope == "🔬 Benchmark Demo Accounts Only" else 0)
+                origin_filter = st.selectbox("Account Origin Filter", ["All Accounts", "🟢 Live Real Users Only", "🧪 Seeded Benchmark Data Only"], index=default_origin_idx, key="user_origin_filter_selectbox")
             with uf_c3:
-                role_filter = st.selectbox("Filter by Role", ["All Roles", "MENTEE", "MENTOR", "ADMIN"])
+                role_filter = st.selectbox("Filter by Role", ["All Roles", "MENTEE", "MENTOR", "ADMIN"], key="user_role_filter_selectbox")
 
-            filtered_users = all_users
-            if origin_filter == "🟢 Live Real Users":
+            filtered_users = all_users_raw
+            if origin_filter == "🟢 Live Real Users Only":
                 filtered_users = [u for u in filtered_users if not _is_demo_usr(u)]
-            elif origin_filter == "🧪 Seeded Benchmark Data":
+            elif origin_filter == "🧪 Seeded Benchmark Data Only":
                 filtered_users = [u for u in filtered_users if _is_demo_usr(u)]
 
             if role_filter != "All Roles":
@@ -7050,7 +7037,20 @@ else:
                     or search_q in (u.get('country') or '').lower()
                 ]
 
-            st.caption(f"Showing {len(filtered_users)} of {total_u} user accounts.")
+            real_users_count = sum(1 for u in filtered_users if not _is_demo_usr(u))
+            synthetic_count = len(filtered_users) - real_users_count
+            total_u = len(filtered_users)
+            mentees_u = sum(1 for u in filtered_users if (u.get('role') or '').upper() == 'MENTEE')
+            mentors_u = sum(1 for u in filtered_users if (u.get('role') or '').upper() == 'MENTOR')
+            two_fa_u  = sum(1 for u in filtered_users if u.get('two_factor_enabled'))
+
+            uc1, uc2, uc3, uc4 = st.columns(4)
+            uc1.metric("👥 Total Accounts Listed", total_u)
+            uc2.metric("🟢 Live Real Users", real_users_count, f"{synthetic_count} Benchmark" if synthetic_count > 0 else "0 Benchmark")
+            uc3.metric("👩‍💻 Mentees / Mentors", f"{mentees_u} / {mentors_u}")
+            uc4.metric("🔒 2FA Enabled", two_fa_u)
+
+            st.caption(f"Showing **{len(filtered_users)}** of **{len(all_users_raw)}** total platform user accounts.")
 
             for u_item in filtered_users:
                 u_id = u_item['id']

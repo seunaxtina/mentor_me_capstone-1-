@@ -1531,7 +1531,6 @@ def api_reset_database():
     except Exception as e:
         return False, f"Error reaching API: {str(e)}"
 
-@st.cache_data(ttl=15)
 def api_admin_get_users():
     headers = {"Authorization": f"Bearer {st.session_state.get('access_token', '')}"}
     try:
@@ -6563,7 +6562,7 @@ else:
         admin_global_scope = st.radio(
             "Filter all dashboard analytics, logs, and exports by scope:",
             ["🟢 Live Registered Users Only", "🧪 Combined Dataset (Real Users + SO2020 Benchmark)", "🔬 Benchmark Demo Accounts Only"],
-            index=1,
+            index=0,
             horizontal=True,
             key="admin_global_scope_radio",
             help="Toggling this filter immediately updates Equity Analytics, Matches Logs, Milestones Tracker, Security Telemetry, and Data Exports across the entire dashboard."

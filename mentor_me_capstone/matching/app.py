@@ -6842,40 +6842,51 @@ else:
                 else:
                     st.error(msg_re)
 
-        all_users = api_admin_get_users()
+        all_users = api_admin_get_users() or []
         audit_logs_for_rep = api_admin_get_audit_logs(limit=100) or []
+
+        st.markdown("##### 🎯 Select Target Data Scope for Exports")
+        export_target_scope = st.radio(
+            "Filter data scope to export:",
+            ["🟢 Live Registered Users Only", "🧪 Combined Dataset (Real Users + Benchmark Demo)", "🔬 Benchmark Demo Accounts Only"],
+            index=1,
+            horizontal=True,
+            key="export_target_scope_radio",
+            help="Select 'Live Registered Users Only' to export clean production data without synthetic benchmark accounts."
+        )
+
+        if export_target_scope == "🟢 Live Registered Users Only":
+            all_users_exp = [u for u in all_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo'))]
+            history_exp = [m for m in history if not (m.get('mentee_email', '').endswith('@mentoring-me.demo') or m.get('mentor_email', '').endswith('@mentoring-me.demo'))]
+        elif export_target_scope == "🔬 Benchmark Demo Accounts Only":
+            all_users_exp = [u for u in all_users if (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo'))]
+            history_exp = [m for m in history if (m.get('mentee_email', '').endswith('@mentoring-me.demo') or m.get('mentor_email', '').endswith('@mentoring-me.demo'))]
+        else:
+            all_users_exp = all_users
+            history_exp = history
+
+        st.caption(f"Currently exporting: **{len(all_users_exp)} Users** and **{len(history_exp)} Match Records** under scope `{export_target_scope}`.")
         
         # Compile Capstone Report Markdown
-        capstone_report_md = generate_capstone_executive_report(history, all_users, audit_logs_for_rep, all_notes, current_cfg)
+        capstone_report_md = generate_capstone_executive_report(history_exp, all_users_exp, audit_logs_for_rep, all_notes, current_cfg)
         
         # Compile Evaluation JSON
         capstone_eval_json = json.dumps({
             "project_metadata": {
                 "title": "Mentoring-Me Capstone Platform",
+                "export_scope": export_target_scope,
                 "evaluation_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "sdg_alignment": "UN SDG 5 (Gender Equality & Women in STEM)"
             },
             "quantitative_kpis": {
-                "total_matches": total_matches,
-                "accepted_connections": len(accepted),
-                "acceptance_rate_pct": round(len(accepted)/total_matches*100, 2) if total_matches else 0.0,
-                "mean_compatibility_score_pct": round(sum(h.get('total_score',0) for h in accepted)/len(accepted)*100, 2) if accepted else 0.0,
-                "female_female_match_rate_pct": round(len(ff_pairs)/len(accepted)*100, 2) if accepted else 0.0,
-                "diversity_ally_boost_rate_pct": round(len(ally_boosted)/total_matches*100, 2) if total_matches else 0.0,
-                "representation_boost_rate_pct": round(len(rep_boosted)/total_matches*100, 2) if total_matches else 0.0,
-                "total_users": len(all_users) if all_users else 0,
-                "mfa_adoption_pct": round(sum(1 for u in all_users if u.get('two_factor_enabled'))/len(all_users)*100, 2) if all_users else 0.0,
-                "sessions_logged": len(all_notes),
-                "milestones_completed": n_completed,
-                "milestone_completion_rate_pct": round(m_comp_rate, 2)
+                "total_matches": len(history_exp),
+                "accepted_connections": len([h for h in history_exp if h.get('status') == 'ACCEPTED']),
+                "acceptance_rate_pct": round(len([h for h in history_exp if h.get('status') == 'ACCEPTED'])/len(history_exp)*100, 2) if history_exp else 0.0,
+                "mean_compatibility_score_pct": round(sum(h.get('total_score',0) for h in history_exp if h.get('status') == 'ACCEPTED')/max(1, len([h for h in history_exp if h.get('status') == 'ACCEPTED']))*100, 2) if [h for h in history_exp if h.get('status') == 'ACCEPTED'] else 0.0,
+                "total_users": len(all_users_exp),
+                "mfa_adoption_pct": round(sum(1 for u in all_users_exp if u.get('two_factor_enabled'))/len(all_users_exp)*100, 2) if all_users_exp else 0.0,
             },
-            "algorithm_hyperparameters": current_cfg,
-            "quality_confidence_tiers": {
-                "strong_matches": len(q_strong),
-                "good_matches": len(q_good),
-                "fair_matches": len(q_fair),
-                "weak_matches": len(q_weak)
-            }
+            "algorithm_hyperparameters": current_cfg
         }, indent=2)
 
         st.markdown("##### 📥 One-Click Academic & Institutional Exports")
@@ -6903,42 +6914,26 @@ else:
             "metric": [
                 "Total Matches Generated",
                 "Accepted Mentorships",
-                "Female Mentees Count",
-                "Female Mentors Count",
-                "Female-Female Pairing Rate",
-                "Cross-Gender Pairing Rate",
-                "D&I Ally Boost Adoption Rate",
-                "Gender Representation Boost Rate",
-                "Average Accepted Match Compatibility Score",
-                "1-on-1 Sessions Logged",
-                "Milestone Completion Rate",
+                "Exported User Scope",
                 "Export Timestamp"
             ],
             "value": [
-                total_matches,
-                len(accepted),
-                len(set(h['mentee_name'] for h in female_mentee)),
-                len(set(h['mentor_name'] for h in female_mentor)),
-                ff_rate,
-                fm_ally_rate,
-                ally_rate,
-                rep_rate,
-                avg_score,
-                n_total,
-                f"{m_comp_rate:.1f}%",
+                len(history_exp),
+                len([h for h in history_exp if h.get('status') == 'ACCEPTED']),
+                export_target_scope,
                 datetime.datetime.now(datetime.timezone.utc).isoformat()
             ]
         }
 
         # Generate Styled HTML Dossiers
-        html_matches_dossier = generate_matches_html_dossier(history)
+        html_matches_dossier = generate_matches_html_dossier(history_exp)
         html_sdg5_dossier = generate_sdg5_html_dossier(sdg_summary_data)
-        html_users_dossier = generate_user_directory_html_dossier(all_users)
+        html_users_dossier = generate_user_directory_html_dossier(all_users_exp)
 
         st.markdown("##### 🌐 Executive HTML Dossiers (Styled & Print-to-PDF Ready)")
         exp_col1, exp_col2, exp_col3 = st.columns(3)
         with exp_col1:
-            if history:
+            if history_exp:
                 st.download_button(
                     label="🌐 Match Outcomes Dossier (.html)",
                     data=html_matches_dossier.encode('utf-8'),
@@ -6959,7 +6954,7 @@ else:
             )
 
         with exp_col3:
-            if all_users:
+            if all_users_exp:
                 st.download_button(
                     label="👥 User Directory Dossier (.html)",
                     data=html_users_dossier.encode('utf-8'),
@@ -6972,11 +6967,11 @@ else:
 
         # Raw CSV Export Fallback (Optional)
         with st.expander("📦 Raw Spreadsheet Data Packages (CSV Fallback)", expanded=False):
-            st.caption("Download unformatted comma-separated raw data files for custom spreadsheet manipulation.")
+            st.caption(f"Download unformatted CSV raw files scoped to `{export_target_scope}`.")
             raw_c1, raw_c2, raw_c3 = st.columns(3)
             with raw_c1:
-                if history:
-                    csv_matches = pd.DataFrame(history).to_csv(index=False).encode('utf-8')
+                if history_exp:
+                    csv_matches = pd.DataFrame(history_exp).to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Raw Matches (CSV)", data=csv_matches, file_name=f"raw_matches_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
                 else:
                     st.button("📥 Raw Matches (CSV)", disabled=True, use_container_width=True)
@@ -6984,8 +6979,8 @@ else:
                 csv_sdg = pd.DataFrame(sdg_summary_data).to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Raw SDG 5 (CSV)", data=csv_sdg, file_name=f"raw_sdg5_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
             with raw_c3:
-                if all_users:
-                    csv_users = pd.DataFrame(all_users).to_csv(index=False).encode('utf-8')
+                if all_users_exp:
+                    csv_users = pd.DataFrame(all_users_exp).to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Raw Users (CSV)", data=csv_users, file_name=f"raw_users_{datetime.datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
                 else:
                     st.button("📥 Raw Users (CSV)", disabled=True, use_container_width=True)

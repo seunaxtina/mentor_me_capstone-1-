@@ -6855,12 +6855,35 @@ else:
             help="Select 'Live Registered Users Only' to export clean production data without synthetic benchmark accounts."
         )
 
+        demo_u_ids = {
+            u['id'] for u in all_users 
+            if (u.get('email') or '').endswith('@mentoring-me.demo') 
+            or (u.get('email') or '').endswith('@mentorme.demo') 
+            or (u.get('id') or '').startswith('user-uuid-')
+        }
+
+        def _is_demo_usr(u_obj):
+            if not isinstance(u_obj, dict):
+                return False
+            em = u_obj.get('email') or ''
+            uid = u_obj.get('id') or ''
+            return em.endswith('@mentoring-me.demo') or em.endswith('@mentorme.demo') or uid.startswith('user-uuid-')
+
+        def _is_demo_mtch(m_obj):
+            if not isinstance(m_obj, dict):
+                return False
+            m_em = m_obj.get('mentee_email') or ''
+            r_em = m_obj.get('mentor_email') or ''
+            if m_em.endswith('@mentoring-me.demo') or r_em.endswith('@mentoring-me.demo'):
+                return True
+            return m_obj.get('mentee_id') in demo_u_ids or m_obj.get('mentor_id') in demo_u_ids
+
         if export_target_scope == "🟢 Live Registered Users Only":
-            all_users_exp = [u for u in all_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo'))]
-            history_exp = [m for m in history if not (m.get('mentee_email', '').endswith('@mentoring-me.demo') or m.get('mentor_email', '').endswith('@mentoring-me.demo'))]
+            all_users_exp = [u for u in all_users if not _is_demo_usr(u)]
+            history_exp = [m for m in history if not _is_demo_mtch(m)]
         elif export_target_scope == "🔬 Benchmark Demo Accounts Only":
-            all_users_exp = [u for u in all_users if (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo'))]
-            history_exp = [m for m in history if (m.get('mentee_email', '').endswith('@mentoring-me.demo') or m.get('mentor_email', '').endswith('@mentoring-me.demo'))]
+            all_users_exp = [u for u in all_users if _is_demo_usr(u)]
+            history_exp = [m for m in history if _is_demo_mtch(m)]
         else:
             all_users_exp = all_users
             history_exp = history
@@ -7035,7 +7058,7 @@ else:
         if not all_users:
             st.info("No registered users retrieved.")
         else:
-            real_users_count = sum(1 for u in all_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-')))
+            real_users_count = sum(1 for u in all_users if not _is_demo_usr(u))
             synthetic_count = len(all_users) - real_users_count
             total_u = len(all_users)
             mentees_u = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE')
@@ -7060,9 +7083,9 @@ else:
 
             filtered_users = all_users
             if origin_filter == "🟢 Live Real Users":
-                filtered_users = [u for u in filtered_users if not (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-'))]
+                filtered_users = [u for u in filtered_users if not _is_demo_usr(u)]
             elif origin_filter == "🧪 Seeded Benchmark Data":
-                filtered_users = [u for u in filtered_users if (u.get('email', '').endswith('@mentoring-me.demo') or u.get('email', '').endswith('@mentorme.demo') or u.get('id', '').startswith('user-uuid-'))]
+                filtered_users = [u for u in filtered_users if _is_demo_usr(u)]
 
             if role_filter != "All Roles":
                 filtered_users = [u for u in filtered_users if (u.get('role') or '').upper() == role_filter]
@@ -7086,7 +7109,7 @@ else:
                 u_country = u_item.get('country', 'Not Specified')
                 u_created = u_item.get('created_at', '').split('T')[0] if 'T' in u_item.get('created_at', '') else u_item.get('created_at', '')
 
-                is_real_user = not (u_email.endswith('@mentoring-me.demo') or u_email.endswith('@mentorme.demo') or u_id.startswith('user-uuid-'))
+                is_real_user = not _is_demo_usr(u_item)
                 origin_badge_bg = "#e8f5e9" if is_real_user else "#fff3e0"
                 origin_badge_color = "#2e7d32" if is_real_user else "#e65100"
                 origin_badge_label = "🟢 LIVE REAL USER" if is_real_user else "🧪 BENCHMARK (SO 2020)"

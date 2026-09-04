@@ -6546,7 +6546,7 @@ else:
                         else:
                             st.error(res)
 
-            # ── Inline Email Des    elif role == "ADMIN":
+    elif role == "ADMIN":
         st.header("🛡️ Administrator Dashboard")
         st.caption("Platform-wide oversight, equity analytics, security telemetry, and data governance.")
 

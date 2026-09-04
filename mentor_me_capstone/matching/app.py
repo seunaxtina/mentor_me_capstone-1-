@@ -1049,11 +1049,13 @@ def api_get_sso_url(provider: str, role: str = "MENTEE", mode: str = "signin", i
                 
     return None
 
-def api_signup(email, password, role, invite_code=None):
+def api_signup(email, password, role, invite_code=None, gender=None):
     try:
         payload = {"email": email, "password": password, "role": role.upper()}
         if invite_code:
             payload["invite_code"] = invite_code
+        if gender:
+            payload["gender"] = gender
         response = api_http.post(f"{API_URL}/auth/signup", json=payload)
         
         if response.status_code in (200, 201):
@@ -4146,6 +4148,7 @@ if st.session_state['access_token'] is None:
                 confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
                 role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
                 role = st.selectbox("I am signing up as a:", role_options)
+                gender_choice = st.selectbox("Gender (Voluntary)", ["Female", "Male", "Non-binary", "Prefer not to say"], index=0)
                 st.caption("🔒 *A 6-digit verification code will be sent to your email to verify and activate your account.*")
                 submit = st.form_submit_button("🚀 Create Account & Verify Email", type="primary", use_container_width=True)
                 if submit:
@@ -4154,7 +4157,7 @@ if st.session_state['access_token'] is None:
                     elif new_password != confirm_password:
                         st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
                     else:
-                        status_res, msg = api_signup(new_email, new_password, role, invite)
+                        status_res, msg = api_signup(new_email, new_password, role, invite, gender=gender_choice)
                         if status_res == "2FA_REQUIRED":
                             st.info(msg)
                             st.session_state['invite_code'] = None

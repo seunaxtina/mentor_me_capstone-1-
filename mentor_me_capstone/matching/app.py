@@ -4148,7 +4148,6 @@ if st.session_state['access_token'] is None:
                 confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
                 role_options = ["Mentor", "Mentee"] if invite else ["Mentee", "Mentor"]
                 role = st.selectbox("I am signing up as a:", role_options)
-                gender_choice = st.selectbox("Gender (Voluntary)", ["Female", "Male", "Non-binary", "Prefer not to say"], index=0)
                 st.caption("🔒 *A 6-digit verification code will be sent to your email to verify and activate your account.*")
                 submit = st.form_submit_button("🚀 Create Account & Verify Email", type="primary", use_container_width=True)
                 if submit:
@@ -4157,7 +4156,7 @@ if st.session_state['access_token'] is None:
                     elif new_password != confirm_password:
                         st.error("❌ Passwords do not match. Please verify that both passwords are identical.")
                     else:
-                        status_res, msg = api_signup(new_email, new_password, role, invite, gender=gender_choice)
+                        status_res, msg = api_signup(new_email, new_password, role, invite)
                         if status_res == "2FA_REQUIRED":
                             st.info(msg)
                             st.session_state['invite_code'] = None

@@ -8,7 +8,7 @@ print("Staging files...")
 subprocess.run([git_bin, "add", "."], cwd=repo_dir)
 
 print("Committing...")
-res_commit = subprocess.run([git_bin, "commit", "-m", "feat: Add Admin 1-Click Database Reseed UI & update seeded reports dataset"], cwd=repo_dir, capture_output=True, text=True)
+res_commit = subprocess.run([git_bin, "commit", "-m", "revert: ensure gender selection remains exclusively in profile setup tab, not quick signup form"], cwd=repo_dir, capture_output=True, text=True)
 print(res_commit.stdout or res_commit.stderr)
 
 print("Pushing to origin main...")

@@ -6637,14 +6637,18 @@ else:
         ally_boosted    = [h for h in history if h.get('is_ally_boosted')]
         rep_boosted     = [h for h in history if h.get('is_representation_boosted')]
 
-        # Count total female mentees supported
-        f_mentee_count = len(set(h['mentee_name'] for h in female_mentee)) if female_mentee else len(history)
+        # Count total female mentees and mentors supported (from match history or registered user profiles)
+        reg_female_mentees = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTEE' and is_female_gender_val(u.get('gender'), default_mentee=True))
+        reg_female_mentors = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR' and is_female_gender_val(u.get('gender'), default_mentee=False))
+
+        f_mentee_count = len(set(h['mentee_name'] for h in female_mentee)) if female_mentee else reg_female_mentees
+        f_mentor_count = len(set(h['mentor_name'] for h in female_mentor)) if female_mentor else reg_female_mentors
 
         em1, em2, em3, em4 = st.columns(4)
         em1.metric("📋 Total Matches", total_matches)
         em2.metric("✅ Accepted Connections", len(accepted))
         em3.metric("♀️ Female Mentees", f_mentee_count)
-        em4.metric("♀️ Female Mentors", len(set(h['mentor_name'] for h in female_mentor)) if female_mentor else len(accepted))
+        em4.metric("♀️ Female Mentors", f_mentor_count)
 
         st.markdown("")
         em5, em6, em7, em8 = st.columns(4)

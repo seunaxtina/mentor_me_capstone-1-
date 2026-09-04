@@ -2802,14 +2802,19 @@ def get_all_registered_users(
         display_name = u.name
         country = None
         years_exp = None
-        if not display_name and u.mentee_profile:
-            display_name = u.mentee_profile.name
-            country = u.mentee_profile.country
-            years_exp = u.mentee_profile.years_code_pro
-        elif not display_name and u.mentor_profile:
-            display_name = u.mentor_profile.name
-            country = u.mentor_profile.country
-            years_exp = u.mentor_profile.years_code_pro
+        gender = None
+        if u.mentee_profile:
+            country = country or u.mentee_profile.country
+            years_exp = years_exp or u.mentee_profile.years_code_pro
+            gender = gender or u.mentee_profile.gender
+            if not display_name:
+                display_name = u.mentee_profile.name
+        if u.mentor_profile:
+            country = country or u.mentor_profile.country
+            years_exp = years_exp or u.mentor_profile.years_code_pro
+            gender = gender or u.mentor_profile.gender
+            if not display_name:
+                display_name = u.mentor_profile.name
             
         results.append({
             "id": u.id,
@@ -2820,6 +2825,7 @@ def get_all_registered_users(
             "two_factor_enabled": u.two_factor_enabled,
             "auth_provider": u.auth_provider or "LOCAL",
             "country": country or "Not Specified",
+            "gender": gender or "Not Specified",
             "years_exp": years_exp if years_exp is not None else "N/A",
             "created_at": u.created_at.isoformat() if u.created_at else ""
         })

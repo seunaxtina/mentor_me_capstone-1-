@@ -7093,6 +7093,7 @@ else:
                 u_2fa = "🔒 2FA Active" if u_item.get('two_factor_enabled') else "🔓 2FA Off"
                 u_provider = u_item.get('auth_provider', 'LOCAL')
                 u_country = u_item.get('country', 'Not Specified')
+                u_gender = u_item.get('gender') or 'Not Specified'
                 u_created = u_item.get('created_at', '').split('T')[0] if 'T' in u_item.get('created_at', '') else u_item.get('created_at', '')
 
                 is_real_user = not _is_demo_usr(u_item)
@@ -7103,6 +7104,10 @@ else:
                 badge_bg = "#e3f2fd" if u_role == "MENTEE" else ("#e8f5e9" if u_role == "MENTOR" else "#f3e5f5")
                 badge_color = "#0d47a1" if u_role == "MENTEE" else ("#1b5e20" if u_role == "MENTOR" else "#4a148c")
 
+                g_icon = "♀️" if u_gender == "Female" else ("♂️" if u_gender == "Male" else "👤")
+                g_bg = "#fce4ec" if u_gender == "Female" else ("#e3f2fd" if u_gender == "Male" else "#f5f5f5")
+                g_color = "#880e4f" if u_gender == "Female" else ("#0d47a1" if u_gender == "Male" else "#424242")
+
                 with st.container(border=True):
                     ul_c, ur_c = st.columns([3, 1])
                     with ul_c:
@@ -7110,6 +7115,7 @@ else:
                         st.markdown(
                             f"<span style='background:{origin_badge_bg}; color:{origin_badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{origin_badge_label}</span>  "
                             f"<span style='background:{badge_bg}; color:{badge_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{u_role}</span>  "
+                            f"<span style='background:{g_bg}; color:{g_color}; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:700;'>{g_icon} {u_gender}</span>  "
                             f"<span style='background:#f5f5f5; color:#424242; padding:2px 8px; border-radius:10px; font-size:0.75rem;'>{u_2fa}</span>  "
                             f"<span style='color:#757575; font-size:0.8rem;'>📍 {u_country} · Auth: {u_provider} · Registered {u_created}</span>",
                             unsafe_allow_html=True

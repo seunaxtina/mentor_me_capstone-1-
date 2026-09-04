@@ -20,9 +20,20 @@ def populate_sample_matches():
     
     db = SessionLocal()
     print("Querying seeded mentees and mentors...")
-    mentees = db.query(models.Mentee).limit(20).all()
-    female_mentors = db.query(models.Mentor).filter(models.Mentor.gender == "Woman").limit(25).all()
-    male_mentors = db.query(models.Mentor).filter(models.Mentor.gender == "Man").limit(25).all()
+    mentees = db.query(models.Mentee).join(models.User).filter(
+        models.User.email.like("%@mentoring-me.demo%")
+    ).limit(20).all()
+    
+    female_mentors = db.query(models.Mentor).join(models.User).filter(
+        models.User.email.like("%@mentoring-me.demo%"),
+        models.Mentor.gender == "Woman"
+    ).limit(25).all()
+    
+    male_mentors = db.query(models.Mentor).join(models.User).filter(
+        models.User.email.like("%@mentoring-me.demo%"),
+        models.Mentor.gender == "Man"
+    ).limit(25).all()
+    
     mentors = female_mentors + male_mentors
     random.shuffle(mentors)
     

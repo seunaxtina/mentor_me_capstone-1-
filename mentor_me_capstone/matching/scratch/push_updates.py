@@ -8,7 +8,7 @@ print("Staging files...")
 subprocess.run([git_bin, "add", "."], cwd=repo_dir)
 
 print("Committing...")
-res_commit = subprocess.run([git_bin, "commit", "-m", "feat: include profile gender in admin user cards and API endpoint"], cwd=repo_dir, capture_output=True, text=True)
+res_commit = subprocess.run([git_bin, "commit", "-m", "fix: synchronize Equity Impact metric counts with registered user directory for 100% data coherence"], cwd=repo_dir, capture_output=True, text=True)
 print(res_commit.stdout or res_commit.stderr)
 
 print("Pushing to origin main...")

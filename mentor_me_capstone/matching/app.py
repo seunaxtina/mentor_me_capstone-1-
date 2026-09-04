@@ -6669,16 +6669,20 @@ else:
         male_mentor     = [h for h in history if (h.get('mentor_gender') or '').lower() in ['male', 'man']]
         reg_male_mentors = sum(1 for u in all_users if (u.get('role') or '').upper() == 'MENTOR' and (u.get('gender') or '').lower() in ['male', 'man'])
 
-        f_mentee_count = len(set(h['mentee_name'] for h in female_mentee)) if female_mentee else reg_female_mentees
-        f_mentor_count = len(set(h['mentor_name'] for h in female_mentor)) if female_mentor else reg_female_mentors
-        m_mentor_count = len(set(h['mentor_name'] for h in male_mentor)) if male_mentor else reg_male_mentors
+        f_mentee_count = reg_female_mentees
+        f_mentor_count = reg_female_mentors
+        m_mentor_count = reg_male_mentors
+
+        active_f_mentee = len(set(h['mentee_name'] for h in female_mentee))
+        active_f_mentor = len(set(h['mentor_name'] for h in female_mentor))
+        active_m_mentor = len(set(h['mentor_name'] for h in male_mentor))
 
         em1, em2, em3, em4, em5 = st.columns(5)
         em1.metric("📋 Total Matches", total_matches)
         em2.metric("✅ Accepted Connections", len(accepted))
-        em3.metric("♀️ Female Mentees", f_mentee_count)
-        em4.metric("♀️ Female Mentors", f_mentor_count)
-        em5.metric("♂️ Male Mentors", m_mentor_count)
+        em3.metric("♀️ Female Mentees", f_mentee_count, help=f"{f_mentee_count} registered female mentees on platform ({active_f_mentee} active in match requests)")
+        em4.metric("♀️ Female Mentors", f_mentor_count, help=f"{f_mentor_count} registered female mentors on platform ({active_f_mentor} active in matches)")
+        em5.metric("♂️ Male Mentors", m_mentor_count, help=f"{m_mentor_count} registered male mentors on platform ({active_m_mentor} active in matches)")
 
         st.markdown("")
         em5, em6, em7, em8 = st.columns(4)

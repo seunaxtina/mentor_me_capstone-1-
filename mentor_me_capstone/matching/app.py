@@ -4045,8 +4045,8 @@ if st.session_state['access_token'] is None:
         with tab1:
             # Step 1: Primary Credentials
             with st.form("login_form"):
-                email = st.text_input("Email", placeholder="e.g. user_90001@mentoring-me.demo or admin@mentoring-me.demo")
-                password = st.text_input("Password", type="password", placeholder="password123")
+                email = st.text_input("Email", placeholder="e.g. name@example.com")
+                password = st.text_input("Password", type="password", placeholder="Enter your password")
                 submit = st.form_submit_button("Sign In")
                 if submit:
                     status_res, msg = api_login(email, password)
@@ -4072,6 +4072,14 @@ if st.session_state['access_token'] is None:
             render_sso_gateway_section(default_role=s_in_role, mode="signin", key_suffix="signin")
             
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+            with st.expander("💡 Capstone Evaluator / Demo Credentials", expanded=False):
+                st.markdown("""
+                Use these pre-configured accounts to test each platform role:
+                - **🌱 Mentee Account:** `user_90001@mentoring-me.demo` *(Password: `password123`)*
+                - **🧭 Mentor Account:** `user_1@mentoring-me.demo` *(Password: `password123`)*
+                - **🛡️ Platform Admin:** `admin@mentoring-me.demo` *(Password: `adminpassword`)*
+                """)
+
             with st.expander("🔑 Forgot Password?", expanded=bool(st.session_state.get('forgot_password_challenge'))):
                 st.caption("Reset your password securely via a 6-digit verification code.")
                 if st.session_state.get('forgot_password_challenge'):

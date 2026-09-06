@@ -13,8 +13,11 @@ uploads/
 
 # Python cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+**/.pytest_cache/
 .venv/
 env/
 venv/

@@ -7,7 +7,7 @@
 
 ### 1.1 Research Question
 
-This project investigates one specific, measurable challenge: **Why do women disproportionately exit technical careers before reaching senior leadership, even when they report being satisfied with their work?** The core hypothesis was that structured mentorship access represents a systemic gap driving attrition. The primary objective of this research was to ground that hypothesis in verifiable workforce data rather than subjective assumption.
+This project investigates one specific, measurable challenge: **Why do women disproportionately exit technical careers before reaching senior leadership, even when they report being satisfied with their work?** The core hypothesis was that structured mentorship access represents a systemic gap driving attrition. The primary objective of this research was to ground that hypothesis in verifiable workforce data rather than subjective assumption. This work directly advances United Nations Sustainable Development Goal Target 5.5, which specifically mandates ensuring women full and effective participation and equal opportunities for leadership at all levels of decision-making in economic and professional life.
 
 ### 1.2 The Dataset
 

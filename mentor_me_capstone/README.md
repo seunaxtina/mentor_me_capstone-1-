@@ -8,7 +8,12 @@
 [![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![Security](https://img.shields.io/badge/Auth-JWT%20%2B%202FA%20OTP-green.svg)]()
 [![Grow with Google](https://img.shields.io/badge/Grow%20with%20Google-Capstone%20Showcase-4285F4.svg)](https://grow.google/)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch%20on%20Google%20Drive-red.svg?logo=google-drive&logoColor=white)](https://drive.google.com/file/d/1qdDRKiq-G77xvIIfe3XvQ6xBTSC0joS3/view?usp=sharing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+
+> 🎬 **5-Minute Scenario Video Demonstration:**  
+> **[▶️ Click here to watch the Mentoring-Me Video Demonstration on Google Drive](https://drive.google.com/file/d/1qdDRKiq-G77xvIIfe3XvQ6xBTSC0joS3/view?usp=sharing)**  
+> *Showcasing the live mentee journey, authentic registered mentor pool queries, explainable dynamic algorithm weights, and direct 1-on-1 scheduling.*
 
 ---
 

@@ -1366,14 +1366,10 @@ def api_update_profile(profile_data):
     except Exception as e:
         return False, f"API Connection Error: {e}"
 
-def api_get_matches(recalculate=False, pool_filter="real_first"):
+def api_get_matches(recalculate=False):
     headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
     try:
-        params = {}
-        if recalculate:
-            params["recalculate"] = "true"
-        if pool_filter:
-            params["pool_filter"] = pool_filter
+        params = {"recalculate": "true"} if recalculate else {}
         response = api_http.get(f"{API_URL}/matches", headers=headers, params=params)
         if response.status_code == 200:
             return response.json()
@@ -4669,7 +4665,7 @@ else:
                         st.error(fb_msg)
 
                 # ── Equity transparency banner ─────────────────────────────
-                if mentee.get('gender') == 'Female':
+                if mentee.get('gender') in ['Female', 'Woman']:
                     st.info(
                         "🌟 **Equity-Adjusted Results**: As an early-career woman in tech, your match results "
                         "prioritise senior female role models and Diversity & Inclusion Allies where available. "
@@ -4677,49 +4673,21 @@ else:
                     )
                 elif mentee.get('prefer_diversity_ally'):
                     st.info("🤝 **Ally-Boosted Results**: Your preference for a Diversity & Inclusion Ally mentor is active — matching results reflect this.")
-                # Candidate Pool Filter selection
-                col_filt, col_info = st.columns([3.2, 1.8])
-                with col_filt:
-                    pool_choice = st.radio(
-                        "Candidate Pool Selection:",
-                        ["🟢 Real Registered Mentors Only", "👥 Prioritize Real Mentors First", "📊 Benchmark Survey Pool"],
-                        index=0,
-                        horizontal=True,
-                        key="mentee_pool_filter_radio"
-                    )
-                with col_info:
-                    if "Real Registered Mentors Only" in pool_choice:
-                        st.caption("🔒 *Showing verified live community members only (excludes survey test profiles).*")
-                    elif "Prioritize" in pool_choice:
-                        st.caption("✨ *Real members are ranked first, followed by high-compatibility benchmark profiles.*")
-                    else:
-                        st.caption("📊 *Includes Stack Overflow benchmark survey profiles.*")
-
-                chosen_filter = "real_only" if "Real Registered Mentors Only" in pool_choice else ("real_first" if "Prioritize" in pool_choice else "all")
-
-                # Track previous filter choice to trigger auto-recalculate on change
-                if st.session_state.get('last_applied_pool_filter') != chosen_filter:
-                    st.session_state['last_applied_pool_filter'] = chosen_filter
-                    st.session_state['current_matches'] = None
-
                 # Auto-restore match proposals from database if not already in session state
                 if 'current_matches' not in st.session_state or st.session_state['current_matches'] is None:
-                    db_proposals = api_get_matches(recalculate=True, pool_filter=chosen_filter)
+                    db_proposals = api_get_matches(recalculate=False)
                     if db_proposals:
-                        st.session_state['current_matches'] = sorted(db_proposals, key=lambda m: (1 if m.get('is_real_user') else 0, m.get('total_score', 0)), reverse=True)
+                        st.session_state['current_matches'] = sorted(db_proposals, key=lambda m: m.get('total_score', 0), reverse=True)
 
                 col_s1, col_s2 = st.columns([2, 1])
                 btn_label = "🔄 Re-calculate / Refresh Matches" if st.session_state.get('current_matches') else "🚀 Search Active Mentor Pool"
                 if col_s1.button(btn_label, type="primary"):
                     with st.spinner("Calculating match coefficients..."):
-                        matches = api_get_matches(recalculate=True, pool_filter=chosen_filter)
+                        matches = api_get_matches(recalculate=True)
                         if not matches:
-                            if chosen_filter == "real_only":
-                                st.info("ℹ️ No registered real mentors match your exact role criteria yet. Try switching to **👥 Prioritize Real Mentors First** to see benchmark profiles alongside registered members, or invite mentors via the **📩 External Invitations** tab.")
-                            else:
-                                st.info("No mentors match your profile currently, or the pool is empty.")
+                            st.info("No registered mentors match your profile currently, or the pool is empty.")
                         else:
-                            st.session_state['current_matches'] = sorted(matches, key=lambda m: (1 if m.get('is_real_user') else 0, m.get('total_score', 0)), reverse=True)
+                            st.session_state['current_matches'] = sorted(matches, key=lambda m: m.get('total_score', 0), reverse=True)
                             st.rerun()
                 
                 if 'current_matches' in st.session_state and st.session_state['current_matches']:
@@ -4729,12 +4697,9 @@ else:
                     for m in matches:
                         raw_score = m['total_score']
                         pct_score = int(round(raw_score * 100)) if isinstance(raw_score, float) and raw_score <= 1.0 else int(round(raw_score))
-                        is_real_m = m.get('is_real_user', False)
-                        type_label = "🟢 Real Member" if is_real_m else "📊 Benchmark"
                         display_list.append({
                             'Mentor ID': m['mentor_id'][:8] if len(str(m['mentor_id'])) > 8 else m['mentor_id'],
                             'Mentor Name': m['mentor_name'] or f"Mentor #{m['mentor_id']}",
-                            'Type': type_label,
                             'Mentor Role(s)': m['mentor_devtype'],
                             'Experience (yrs)': format_experience_years(m.get('mentor_years')),
                             'Country': m['mentor_country'],
@@ -4767,9 +4732,7 @@ else:
                             cols = st.columns([2.5, 1.2, 0.8])
                             raw_s = m['total_score']
                             pct_s = int(round(raw_s * 100)) if isinstance(raw_s, float) and raw_s <= 1.0 else int(round(raw_s))
-                            is_real_m = m.get('is_real_user', False)
-                            badge_html = "<span style='background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; margin-left:8px;'>🟢 REAL MEMBER</span>" if is_real_m else "<span style='background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; margin-left:8px;'>📊 Benchmark</span>"
-                            cols[0].markdown(f"**{m['mentor_name']}** {badge_html}  \n<span style='font-size:0.88rem; color:#475569;'>{m['mentor_devtype']} | {format_experience_years(m.get('mentor_years'))} yrs exp — **Score: {pct_s}%** ({m['match_quality']})</span>", unsafe_allow_html=True) 
+                            cols[0].write(f"**{m['mentor_name']}** ({m['mentor_devtype']} | {format_experience_years(m.get('mentor_years'))} yrs exp) — **Score: {pct_s}%** ({m['match_quality']})") 
                             
                             with st.expander(f"👤 View {m['mentor_name']}'s Profile Details"):
                                 display_profile_card(
@@ -7171,9 +7134,9 @@ else:
                 gender_display = u_gender
                 if u_gender in ("Not Specified", "Not stated", None, ""):
                     gender_display = "Not Set in Profile" if is_real_user else (u_gender or "Not Specified")
-                g_icon = "♀️" if u_gender == "Female" else ("♂️" if u_gender == "Male" else "👤")
-                g_bg = "#fce4ec" if u_gender == "Female" else ("#e3f2fd" if u_gender == "Male" else "#f5f5f5")
-                g_color = "#880e4f" if u_gender == "Female" else ("#0d47a1" if u_gender == "Male" else "#424242")
+                g_icon = "♀️" if u_gender in ("Female", "Woman") else ("♂️" if u_gender in ("Male", "Man") else "👤")
+                g_bg = "#fce4ec" if u_gender in ("Female", "Woman") else ("#e3f2fd" if u_gender in ("Male", "Man") else "#f5f5f5")
+                g_color = "#880e4f" if u_gender in ("Female", "Woman") else ("#0d47a1" if u_gender in ("Male", "Man") else "#424242")
 
                 with st.container(border=True):
                     ul_c, ur_c = st.columns([3, 1])

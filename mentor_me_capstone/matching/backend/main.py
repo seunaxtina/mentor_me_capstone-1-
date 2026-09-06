@@ -1460,7 +1460,6 @@ def freestyle_match_score(mentee_text: str, mentor_text: str, mentor_devtype: st
 def get_matches(
     limit: int = 5,
     recalculate: bool = False,
-    pool_filter: str = "real_first",  # 'real_first', 'real_only', 'all'
     current_user: models.User = Depends(auth.require_role(["MENTEE"])),
     db: Session = Depends(get_db)
 ):
@@ -1468,7 +1467,7 @@ def get_matches(
     if not mentee:
         raise HTTPException(status_code=404, detail="Mentee profile not found.")
         
-    # If not explicitly recalculating, check for existing stored proposals
+    # If not explicitly recalculating, check for existing stored proposals of real registered mentors
     if not recalculate:
         existing_proposals = db.query(models.Match).filter(
             models.Match.mentee_id == mentee.id, 
@@ -1482,13 +1481,12 @@ def get_matches(
                 if not mentor_prof or not mentor_prof.is_active:
                     continue
                 mentor_user = db.query(models.User).filter(models.User.id == m.mentor_id).first()
-                is_real = bool(mentor_user and mentor_user.email and not mentor_user.email.endswith('@mentoring-me.demo'))
-                
-                if pool_filter == "real_only" and not is_real:
+                # Exclude synthetic @mentoring-me.demo accounts
+                if not mentor_user or not mentor_user.email or mentor_user.email.endswith('@mentoring-me.demo'):
                     continue
                     
                 exp_gap = float(mentor_prof.years_code_pro or 0.0) - float(mentee.years_code_pro or 0.0)
-                is_rep = (mentee.gender == "Female" and mentor_prof.gender == "Female")
+                is_rep = bool(mentee.gender in ["Female", "Woman"] and mentor_prof.gender in ["Female", "Woman"])
                 is_ally = bool(mentee.prefer_diversity_ally and mentor_prof.is_diversity_ally)
                 
                 resp_list.append(schemas.MatchResponse(
@@ -1523,7 +1521,7 @@ def get_matches(
                     mentee_gender=mentee.gender if mentee else None,
                     is_representation_boosted=is_rep,
                     is_ally_boosted=is_ally,
-                    is_real_user=is_real,
+                    is_real_user=True,
                     mentor_linkedin_link=mentor_prof.linkedin_link if mentor_prof else None,
                     mentee_linkedin_link=mentee.linkedin_link if mentee else None,
                     mentee_name=mentee.name if mentee else "Anonymous",
@@ -1538,12 +1536,18 @@ def get_matches(
                     mentee_additional_details=mentee.additional_details if mentee else None
                 ))
             if resp_list:
-                if pool_filter == "real_first":
-                    resp_list.sort(key=lambda x: (1 if x.is_real_user else 0, x.total_score), reverse=True)
                 return resp_list[:limit]
 
-    # Query all active mentors from database
-    active_mentors = db.query(models.Mentor).filter(models.Mentor.is_active == True).all()
+    # Query ONLY real active registered mentors (exclude @mentoring-me.demo accounts)
+    active_mentors = (
+        db.query(models.Mentor)
+        .join(models.User, models.Mentor.id == models.User.id)
+        .filter(
+            models.Mentor.is_active == True,
+            ~models.User.email.like("%@mentoring-me.demo")
+        )
+        .all()
+    )
     if not active_mentors:
         return []
         
@@ -1583,13 +1587,6 @@ def get_matches(
     for m in active_mentors:
         # Avoid matching with self
         if m.id == mentee.id:
-            continue
-            
-        m_user = db.query(models.User).filter(models.User.id == m.id).first()
-        is_real = bool(m_user and m_user.email and not m_user.email.endswith('@mentoring-me.demo'))
-        
-        # If filtering to real registered mentors only, exclude synthetic demo profiles
-        if pool_filter == "real_only" and not is_real:
             continue
             
         m_series = pd.Series({
@@ -1645,7 +1642,7 @@ def get_matches(
 
         # Representation & Role-Model Boost (SDG 5 Focus)
         is_representation_boosted = False
-        if mentee.gender == "Female" and m.gender == "Female":
+        if mentee.gender in ["Female", "Woman"] and m.gender in ["Female", "Woman"]:
             score = min(1.0, score + 0.10)
             is_representation_boosted = True
 
@@ -1695,15 +1692,11 @@ def get_matches(
             'mentee_gender': mentee.gender,
             'is_representation_boosted': is_representation_boosted,
             'is_ally_boosted': is_ally_boosted,
-            'is_real_user': is_real
+            'is_real_user': True
         })
         
-    # Primary sort: real registered users first (if requested), then total_score descending, experience_gap ascending
-    if pool_filter == "real_first":
-        results.sort(key=lambda x: (1 if x['is_real_user'] else 0, x['total_score'], -x['experience_gap']), reverse=True)
-    else:
-        results.sort(key=lambda x: (x['total_score'], -x['experience_gap']), reverse=True)
-        
+    # Primary sort: total_score descending. Secondary: experience_gap ascending
+    results.sort(key=lambda x: (x['total_score'], -x['experience_gap']), reverse=True)
     top_matches = results[:limit]
     
     # Clean previous proposed matches for this mentee first
@@ -1985,7 +1978,7 @@ def match_action(action_in: schemas.MatchAction, current_user: models.User = Dep
         mentor_additional_details=mentor_prof.additional_details if mentor_prof else None,
         mentor_gender=mentor_prof.gender if mentor_prof else None,
         mentee_gender=mentee_prof.gender if mentee_prof else None,
-        is_representation_boosted=True if (mentee_prof and mentee_prof.gender == "Female" and mentor_prof and mentor_prof.gender == "Female") else False,
+        is_representation_boosted=True if (mentee_prof and mentee_prof.gender in ["Female", "Woman"] and mentor_prof and mentor_prof.gender in ["Female", "Woman"]) else False,
         is_ally_boosted=True if (mentee_prof and mentee_prof.prefer_diversity_ally and mentor_prof and mentor_prof.is_diversity_ally) else False,
         mentor_linkedin_link=mentor_prof.linkedin_link if mentor_prof else None,
         mentee_linkedin_link=mentee_prof.linkedin_link if mentee_prof else None,
@@ -2053,7 +2046,7 @@ def get_match_history(current_user: models.User = Depends(auth.get_current_user)
             mentor_additional_details=mentor_prof.additional_details if mentor_prof else None,
             mentor_gender=mentor_prof.gender if mentor_prof else None,
             mentee_gender=mentee_prof.gender if mentee_prof else None,
-            is_representation_boosted=True if (mentee_prof and mentee_prof.gender == "Female" and mentor_prof and mentor_prof.gender == "Female") else False,
+            is_representation_boosted=True if (mentee_prof and mentee_prof.gender in ["Female", "Woman"] and mentor_prof and mentor_prof.gender in ["Female", "Woman"]) else False,
             is_ally_boosted=True if (mentee_prof and mentee_prof.prefer_diversity_ally and mentor_prof and mentor_prof.is_diversity_ally) else False,
             mentor_linkedin_link=mentor_prof.linkedin_link if mentor_prof else None,
             mentee_linkedin_link=mentee_prof.linkedin_link if mentee_prof else None,
@@ -2496,7 +2489,7 @@ def get_mentee_linkedin_deep_link(
     else:
         raw_c = (mentee.target_mentor_country or "").replace(";", ",").split(",")[0].strip()
         target_country = raw_c or mentee.country or ""
-    target_wit = women_in_tech if women_in_tech is not None else (mentee.gender == "Female" or mentee.prefer_diversity_ally)
+    target_wit = women_in_tech if women_in_tech is not None else (mentee.gender in ["Female", "Woman"] or mentee.prefer_diversity_ally)
     
     skill_list = [s.strip() for s in skills.split(",") if s.strip()] if skills else []
     

@@ -85,9 +85,33 @@ A deliberate architectural decision governed the development of the **Outreach H
 * **The Engineered Solution**: Rather than deploying unauthorized scrapers, the platform utilizes a zero-dependency **Boolean Query and Deep Link Synthesizer**. The backend dynamically compiles a mentee's skill targets, seniority requirements, geographic preferences, and Women-in-Tech keywords into valid, URL-encoded Boolean search links.
 * **User Agency and Full Reliability**: When activated, the link opens directly within the user's authentic browser session, accompanied by personalized, pre-drafted outreach templates. This ensures **100% operational uptime**, **zero external API fees**, and **complete adherence to web platform governance standards**.
 
-## Part 3: Implementation Plan and Algorithmic Matching
+## Part 3: Implementation Plan
 
-### 3.1 Algorithm Design (Advanced Data Analytics: Martha Afful)
+### 3.1 Execution Steps and Timeline
+
+The project followed a structured, phased execution model. Each phase was assigned to team members based on their Google Career Certificate specialization, ensuring domain expertise governed every deliverable.
+
+| Phase | Description | Timeline | Team Lead |
+|---|---|---|---|
+| **Phase 1: Data Analysis and EDA** | Acquire, clean, and analyze the Stack Overflow 2020 Developer Survey. Perform gender-disaggregated statistical analysis. Produce the five core empirical findings. | July 19 to August 2 | Amanda Malahlela (Data Analytics) |
+| **Phase 2: Backend API and Matching Engine** | Design the five-factor weighted scoring algorithm. Build FastAPI REST endpoints for registration, authentication, profile management, and matching. Implement equity overlays and dynamic weight adjustment. | August 2 to August 16 | Martha Afful (Advanced Data Analytics) |
+| **Phase 3: Frontend Dashboard** | Develop the Streamlit multi-role dashboard (Mentee, Mentor, Admin views). Build the explainable compatibility breakdown UI, direct messaging, calendar sync, and the Outreach Hub interface. | August 9 to August 23 | Medha Yasa (IT Automation) |
+| **Phase 4: Security and 2FA** | Implement Bcrypt password hashing, JWT stateless sessions, 2FA email OTP verification, anti-enumeration protection, and audit logging. | August 16 to August 27 | Seuna Christina (Cybersecurity) |
+| **Phase 5: Testing and Validation** | Execute 23 automated pytest tests covering matching accuracy, authentication flows, and security edge cases. Benchmark the algorithm against a random-assignment baseline across 49,294 records. | August 27 to September 1 | Full Team |
+| **Phase 6: Deployment and User Registration** | Containerize with Docker Compose. Deploy the live platform. Onboard 11 real users (5 mentees, 6 mentors) and validate production match quality. | September 1 to September 4 | Full Team |
+
+### 3.2 Resources
+
+| Resource Category | Specific Resources Used |
+|---|---|
+| **Primary Dataset** | Stack Overflow 2020 Annual Developer Survey (64,461 raw respondents, 49,294 cleaned) |
+| **Academic Literature** | McKinsey *Women in the Workplace* reports, Catalyst sponsorship research |
+| **Team Expertise** | Four Google Career Certificate holders across Data Analytics, Advanced Data Analytics, IT Automation, and Cybersecurity |
+| **Technology Stack** | Python, FastAPI, Streamlit, SQLAlchemy, SQLite/PostgreSQL, Docker, Google Gemini 1.5, pytest |
+| **External APIs** | GitHub REST API (developer profile discovery), ORCID public directory, LinkedIn Boolean deep link synthesis |
+| **Infrastructure** | Local development environments with Docker Compose orchestration, cloud-ready PostgreSQL configuration |
+
+### 3.3 Algorithmic Matching Design (Advanced Data Analytics: Martha Afful)
 
 The matching engine employs an **explainable five-factor scoring model** executed pairwise between a mentee and each active mentor profile. Transparency is maintained as a strict design rule: every score component remains independently inspectable and is visualized directly within the mentee interface.
 
@@ -110,18 +134,29 @@ Measures compatibility across stated workplace priorities, including flexible sc
 #### Factor 5: Practical and Logistics Fit (Weight: 10%)
 Assesses organizational scale compatibility, ensuring guidance is tailored appropriately whether the mentee is navigating early-stage startups or large-scale enterprise environments.
 
-### 3.2 Dynamic Weight Adjustment
+### 3.4 Dynamic Weight Adjustment
 
 When a mentee enters a custom biography and specific technical aspirations, a **sixth dimension (Freestyle NLP Matching, 10% weight)** automatically activates. The algorithm dynamically redistributes weight from the Role and Experience factors to evaluate text alignment using keyword domain coverage. When no biography is provided, this factor smoothly adjusts to 0%, and the remaining five factors return to their standard distribution.
 
-### 3.3 Equity Overlays (Commitment to UN SDG 5)
+### 3.5 Equity Overlays (Commitment to UN SDG 5)
 
 Two equity adjustments are integrated into the scoring output:
 
 * **Representation Alignment Boost (+10%)**: When a female mentee is evaluated alongside a senior female mentor, a 10% score priority is applied. This intervention counteracts demographic scarcity, preventing qualified female mentors from being submerged beneath larger male applicant volumes.
 * **D&I Allyship Boost (+10%)**: When a mentee requests ally mentorship and a mentor has verified Diversity Ally standing, a 10% priority boost is activated. Cumulative adjustments are strictly bounded at a maximum of +20% to prevent artificial score inflation.
 
-### 3.4 Empirical Benchmarking (Algorithm Validation)
+### 3.6 Risks and Mitigation Strategies
+
+| Risk Identified | Potential Impact | Mitigation Strategy Implemented |
+|---|---|---|
+| **Data Quality and Missingness** | High-missingness fields (20% to 36%) could distort workforce disparity metrics if imputed | Adopted a strict non-imputation policy. Each analysis uses only complete-case observations with documented sub-sample sizes. |
+| **Cold-Start Algorithm Bias** | New platforms lack historical interaction data to train recommendation weights | Deployed hand-tuned, research-grounded factor weights validated through empirical benchmarking (+80.6% over random baseline). Modular architecture supports future reinforcement learning once feedback volume accumulates. |
+| **Small Mentor Pool** | Limited initial mentor supply could reduce match diversity and quality | Integrated the Outreach Hub for external talent discovery via GitHub, ORCID, and LinkedIn deep links, expanding the effective candidate pool beyond registered users. |
+| **Security Vulnerabilities** | Credential theft, account enumeration, and unauthorized access | Implemented layered defenses: Bcrypt hashing, 2FA with time-limited OTP, JWT session tokens, anti-enumeration responses, and comprehensive audit logging. |
+| **Platform Scalability** | SQLite limitations under concurrent multi-user production load | Architected the data layer with SQLAlchemy ORM decoupled from specific database engines. PostgreSQL and Google Cloud SQL are supported through environment configuration without code changes. |
+| **Algorithmic Transparency Distrust** | Users may reject recommendations from opaque matching systems | Built an Explainable Compatibility Breakdown UI showing individual percentage contributions across all scoring dimensions, enabling users to verify and trust every recommendation. |
+
+### 3.7 Empirical Benchmarking (Algorithm Validation)
 
 The algorithm was validated against an unweighted random-assignment baseline across the cleaned Stack Overflow dataset (49,294 respondents):
 
@@ -135,7 +170,7 @@ The algorithm was validated against an unweighted random-assignment baseline acr
 
 The narrow standard deviation (0.063 compared to 0.220 for random pairings) confirms that the model is **rigorously selective** rather than returning uniform central scores.
 
-### 3.5 Live Platform Telemetry and Production User Validation
+### 3.8 Live Platform Telemetry and Production User Validation
 
 Beyond synthetic benchmarking, the platform was validated against the **live production registry** reflected in the Administrator Dashboard:
 

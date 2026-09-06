@@ -2,9 +2,9 @@ name: Mentor Me CI / Automated Test Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 2026-cohort, team-prism-strategists ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, 2026-cohort, team-prism-strategists ]
 
 jobs:
   test:

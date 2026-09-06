@@ -220,6 +220,7 @@ class MatchResponse(BaseModel):
     mentee_gender: Optional[str] = None
     is_representation_boosted: Optional[bool] = False
     is_ally_boosted: Optional[bool] = False
+    is_real_user: Optional[bool] = False
     mentor_linkedin_link: Optional[str] = None
     mentee_linkedin_link: Optional[str] = None
 

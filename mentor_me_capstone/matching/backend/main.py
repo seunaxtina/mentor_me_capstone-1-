@@ -1460,6 +1460,7 @@ def freestyle_match_score(mentee_text: str, mentor_text: str, mentor_devtype: st
 def get_matches(
     limit: int = 5,
     recalculate: bool = False,
+    pool_filter: str = "real_first",  # 'real_first', 'real_only', 'all'
     current_user: models.User = Depends(auth.require_role(["MENTEE"])),
     db: Session = Depends(get_db)
 ):
@@ -1472,7 +1473,7 @@ def get_matches(
         existing_proposals = db.query(models.Match).filter(
             models.Match.mentee_id == mentee.id, 
             models.Match.status == "PROPOSED"
-        ).order_by(models.Match.total_score.desc()).limit(limit).all()
+        ).order_by(models.Match.total_score.desc()).all()
         
         if existing_proposals:
             resp_list = []
@@ -1481,6 +1482,11 @@ def get_matches(
                 if not mentor_prof or not mentor_prof.is_active:
                     continue
                 mentor_user = db.query(models.User).filter(models.User.id == m.mentor_id).first()
+                is_real = bool(mentor_user and mentor_user.email and not mentor_user.email.endswith('@mentoring-me.demo'))
+                
+                if pool_filter == "real_only" and not is_real:
+                    continue
+                    
                 exp_gap = float(mentor_prof.years_code_pro or 0.0) - float(mentee.years_code_pro or 0.0)
                 is_rep = (mentee.gender == "Female" and mentor_prof.gender == "Female")
                 is_ally = bool(mentee.prefer_diversity_ally and mentor_prof.is_diversity_ally)
@@ -1517,6 +1523,7 @@ def get_matches(
                     mentee_gender=mentee.gender if mentee else None,
                     is_representation_boosted=is_rep,
                     is_ally_boosted=is_ally,
+                    is_real_user=is_real,
                     mentor_linkedin_link=mentor_prof.linkedin_link if mentor_prof else None,
                     mentee_linkedin_link=mentee.linkedin_link if mentee else None,
                     mentee_name=mentee.name if mentee else "Anonymous",
@@ -1531,7 +1538,9 @@ def get_matches(
                     mentee_additional_details=mentee.additional_details if mentee else None
                 ))
             if resp_list:
-                return resp_list
+                if pool_filter == "real_first":
+                    resp_list.sort(key=lambda x: (1 if x.is_real_user else 0, x.total_score), reverse=True)
+                return resp_list[:limit]
 
     # Query all active mentors from database
     active_mentors = db.query(models.Mentor).filter(models.Mentor.is_active == True).all()
@@ -1574,6 +1583,13 @@ def get_matches(
     for m in active_mentors:
         # Avoid matching with self
         if m.id == mentee.id:
+            continue
+            
+        m_user = db.query(models.User).filter(models.User.id == m.id).first()
+        is_real = bool(m_user and m_user.email and not m_user.email.endswith('@mentoring-me.demo'))
+        
+        # If filtering to real registered mentors only, exclude synthetic demo profiles
+        if pool_filter == "real_only" and not is_real:
             continue
             
         m_series = pd.Series({
@@ -1678,11 +1694,16 @@ def get_matches(
             'mentor_gender': m.gender,
             'mentee_gender': mentee.gender,
             'is_representation_boosted': is_representation_boosted,
-            'is_ally_boosted': is_ally_boosted
+            'is_ally_boosted': is_ally_boosted,
+            'is_real_user': is_real
         })
         
-    # Primary sort: total_score descending. Secondary: experience_gap ascending
-    results.sort(key=lambda x: (x['total_score'], -x['experience_gap']), reverse=True)
+    # Primary sort: real registered users first (if requested), then total_score descending, experience_gap ascending
+    if pool_filter == "real_first":
+        results.sort(key=lambda x: (1 if x['is_real_user'] else 0, x['total_score'], -x['experience_gap']), reverse=True)
+    else:
+        results.sort(key=lambda x: (x['total_score'], -x['experience_gap']), reverse=True)
+        
     top_matches = results[:limit]
     
     # Clean previous proposed matches for this mentee first
